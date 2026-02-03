@@ -35,6 +35,20 @@
         /* Animações simples */
         .fade-in { animation: fadeIn 0.3s ease-in; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Loading spinner */
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -52,9 +66,7 @@
             measurementId: "G-B6H79DLBNR"
         };
 
-        const appId = 'colabnotes-app';
-
-        // Inicializa Firebase apenas se não existir
+        // Inicializa Firebase
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
@@ -64,7 +76,6 @@
 
         // --- 2. UTILITÁRIOS ---
         
-        // Formata data para exibição
         const formatDate = (timestamp) => {
             if (!timestamp) return '';
             const date = new Date(timestamp);
@@ -73,12 +84,10 @@
             }).format(date);
         };
 
-        // Gera Link do Google Calendar
         const getGoogleCalendarUrl = (note) => {
             if (!note.reminderDate) return '#';
             
             const startDate = new Date(note.reminderDate).toISOString().replace(/-|:|\.\d\d\d/g, "");
-            // Adiciona 1 hora para o fim do evento
             const endDate = new Date(new Date(note.reminderDate).getTime() + 60*60*1000).toISOString().replace(/-|:|\.\d\d\d/g, "");
             
             const title = encodeURIComponent(note.title);
@@ -87,7 +96,6 @@
             return `https://www.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startDate}/${endDate}&details=${details}`;
         };
 
-        // Envia Notificação Push (Navegador)
         const sendBrowserNotification = (title, body) => {
             if (!("Notification" in window)) return;
             
@@ -104,12 +112,18 @@
 
         // --- 3. COMPONENTES ---
 
-        // Componente de Modal
-        const Modal = ({ isOpen, onClose, title, children }) => {
+        const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
             if (!isOpen) return null;
+            
+            const sizeClasses = {
+                sm: 'max-w-md',
+                md: 'max-w-lg',
+                lg: 'max-w-2xl'
+            };
+            
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 fade-in">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+                    <div className={`bg-white rounded-xl shadow-2xl w-full ${sizeClasses[size]} overflow-hidden`}>
                         <div className="flex justify-between items-center p-4 border-b">
                             <h3 className="text-lg font-bold text-gray-800">{title}</h3>
                             <button onClick={onClose} className="text-gray-500 hover:text-red-500 transition">
@@ -124,6 +138,265 @@
             );
         };
 
+        // Componente de Login
+        const LoginForm = ({ onLoginSuccess, onSwitchToRegister }) => {
+            const [email, setEmail] = React.useState('');
+            const [password, setPassword] = React.useState('');
+            const [loading, setLoading] = React.useState(false);
+            const [error, setError] = React.useState('');
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                setError('');
+
+                try {
+                    await auth.signInWithEmailAndPassword(email, password);
+                    onLoginSuccess();
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleGoogleLogin = async () => {
+                try {
+                    const provider = new firebase.auth.GoogleAuthProvider();
+                    await auth.signInWithPopup(provider);
+                    onLoginSuccess();
+                } catch (err) {
+                    setError(err.message);
+                }
+            };
+
+            const handleAnonymousLogin = async () => {
+                try {
+                    await auth.signInAnonymously();
+                    onLoginSuccess();
+                } catch (err) {
+                    setError(err.message);
+                }
+            };
+
+            return (
+                <div className="space-y-6">
+                    {error && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                            {error}
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <button
+                            onClick={handleGoogleLogin}
+                            className="flex items-center justify-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-3 rounded-lg hover:bg-gray-50 transition"
+                        >
+                            <i className="fa-brands fa-google text-red-500"></i>
+                            Google
+                        </button>
+                        
+                        <button
+                            onClick={handleAnonymousLogin}
+                            className="flex items-center justify-center gap-2 bg-gray-800 text-white px-4 py-3 rounded-lg hover:bg-gray-900 transition"
+                        >
+                            <i className="fa-solid fa-user-secret"></i>
+                            Anônimo
+                        </button>
+                    </div>
+
+                    <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-gray-300"></div>
+                        </div>
+                        <div className="relative flex justify-center text-sm">
+                            <span className="px-2 bg-white text-gray-500">Ou use email</span>
+                        </div>
+                    </div>
+
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                            <input
+                                type="email"
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+                            <input
+                                type="password"
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            {loading ? (
+                                <>
+                                    <div className="spinner-small w-5 h-5 border-2"></div>
+                                    Entrando...
+                                </>
+                            ) : (
+                                'Entrar'
+                            )}
+                        </button>
+                    </form>
+
+                    <div className="text-center">
+                        <button
+                            onClick={onSwitchToRegister}
+                            className="text-blue-600 hover:text-blue-800 text-sm"
+                        >
+                            Não tem conta? Registre-se
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // Componente de Registro
+        const RegisterForm = ({ onRegisterSuccess, onSwitchToLogin }) => {
+            const [name, setName] = React.useState('');
+            const [email, setEmail] = React.useState('');
+            const [password, setPassword] = React.useState('');
+            const [confirmPassword, setConfirmPassword] = React.useState('');
+            const [loading, setLoading] = React.useState(false);
+            const [error, setError] = React.useState('');
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                
+                if (password !== confirmPassword) {
+                    setError('As senhas não coincidem');
+                    return;
+                }
+                
+                if (password.length < 6) {
+                    setError('A senha deve ter pelo menos 6 caracteres');
+                    return;
+                }
+
+                setLoading(true);
+                setError('');
+
+                try {
+                    // Cria usuário
+                    const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+                    
+                    // Atualiza display name
+                    await userCredential.user.updateProfile({
+                        displayName: name
+                    });
+                    
+                    // Salva nome no Firestore para referência futura
+                    await db.collection('users').doc(userCredential.user.uid).set({
+                        name: name,
+                        email: email,
+                        createdAt: Date.now()
+                    });
+                    
+                    onRegisterSuccess(name);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            return (
+                <div className="space-y-6">
+                    {error && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                            {error}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                            <input
+                                type="text"
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                required
+                            />
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                            <input
+                                type="email"
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+                            <input
+                                type="password"
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                                minLength="6"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p>
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar Senha</label>
+                            <input
+                                type="password"
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                required
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            {loading ? (
+                                <>
+                                    <div className="spinner-small w-5 h-5 border-2"></div>
+                                    Criando conta...
+                                </>
+                            ) : (
+                                'Criar Conta'
+                            )}
+                        </button>
+                    </form>
+
+                    <div className="text-center">
+                        <button
+                            onClick={onSwitchToLogin}
+                            className="text-blue-600 hover:text-blue-800 text-sm"
+                        >
+                            Já tem conta? Faça login
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
         // Componente Principal
         const App = () => {
             const [user, setUser] = React.useState(null);
@@ -133,7 +406,8 @@
             const [loading, setLoading] = React.useState(true);
             
             // Estados de UI
-            const [isLoginModalOpen, setIsLoginModalOpen] = React.useState(true);
+            const [showAuthModal, setShowAuthModal] = React.useState(true);
+            const [authMode, setAuthMode] = React.useState('login'); // 'login' or 'register'
             const [isNoteModalOpen, setIsNoteModalOpen] = React.useState(false);
             const [isSettingsModalOpen, setIsSettingsModalOpen] = React.useState(false);
             const [activeNote, setActiveNote] = React.useState(null);
@@ -153,60 +427,48 @@
                 publicKey: localStorage.getItem('email_public_key') || ''
             });
 
-            // Verifica permissão de notificação
-            const requestNotificationPermission = () => {
-                if (!("Notification" in window)) {
-                    alert("Este navegador não suporta notificações de desktop.");
-                    return;
-                }
-                Notification.requestPermission().then(permission => {
-                    if (permission === "granted") {
-                        new Notification("Notificações Ativadas!", { 
-                            body: "Você receberá alertas de novas notas e comentários.",
-                            icon: "https://cdn-icons-png.flaticon.com/512/2965/2965358.png"
-                        });
-                    } else {
-                        alert("Permissão negada. Verifique as configurações do seu navegador.");
-                    }
-                });
-            };
-
-            // --- AUTENTICAÇÃO E INICIALIZAÇÃO ---
+            // --- AUTENTICAÇÃO ---
             React.useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (u) => {
                     if (u) {
                         setUser(u);
-                        const savedName = localStorage.getItem(`username_${u.uid}`);
-                        if(savedName) {
-                            setUsername(savedName);
-                            setIsLoginModalOpen(false);
+                        
+                        // Define o nome do usuário
+                        let displayName = u.displayName || 'Usuário';
+                        
+                        // Se for usuário anônimo, pede nome
+                        if (u.isAnonymous) {
+                            const savedName = localStorage.getItem(`username_${u.uid}`);
+                            if (savedName) {
+                                displayName = savedName;
+                            } else {
+                                setShowAuthModal(true);
+                                setAuthMode('login');
+                                return;
+                            }
+                        } else {
+                            // Para usuários logados com email/Google
+                            displayName = u.displayName || u.email.split('@')[0];
                         }
+                        
+                        setUsername(displayName);
+                        setShowAuthModal(false);
                     } else {
-                        // Se não tiver usuário, cria anônimo
-                        try {
-                            await auth.signInAnonymously();
-                        } catch (error) {
-                            console.error("Erro ao autenticar:", error);
-                        }
+                        // Nenhum usuário, mostra modal de login
+                        setShowAuthModal(true);
+                        setAuthMode('login');
                     }
                 });
-
-                // Tenta solicitar permissão de notificação
-                if ("Notification" in window && Notification.permission === "default") {
-                    Notification.requestPermission();
-                }
 
                 return () => unsubscribe();
             }, []);
 
-            // --- CARREGAMENTO DE DADOS (REAL-TIME) ---
+            // --- CARREGAMENTO DE DADOS ---
             React.useEffect(() => {
                 if (!user) return;
 
-                // 1. Carregar Notas - ESTRUTURA SIMPLIFICADA
-                const notesRef = db.collection('notes');
-                
-                const unsubNotes = notesRef
+                // Carregar Notas
+                const unsubNotes = db.collection('notes')
                     .orderBy('updatedAt', 'desc')
                     .onSnapshot((snapshot) => {
                         const loadedNotes = [];
@@ -217,17 +479,15 @@
                         setNotes(loadedNotes);
                         setLoading(false);
                         
-                        // Verifica novas notas (últimos 10 segundos)
+                        // Notificação para novas notas
                         const latest = loadedNotes[0];
                         if (latest && (Date.now() - latest.updatedAt) < 10000 && latest.authorId !== user.uid) {
-                           sendBrowserNotification("Nova Nota!", `${latest.author} criou ou editou "${latest.title}"`);
+                            sendBrowserNotification("Nova Nota!", `${latest.author} criou ou editou "${latest.title}"`);
                         }
                     }, (error) => console.error("Erro notas:", error));
 
-                // 2. Carregar Comentários
-                const commentsRef = db.collection('comments');
-                
-                const unsubComments = commentsRef
+                // Carregar Comentários
+                const unsubComments = db.collection('comments')
                     .orderBy('createdAt', 'asc')
                     .onSnapshot((snapshot) => {
                         const loadedComments = [];
@@ -235,7 +495,7 @@
                             loadedComments.push({ id: doc.id, ...doc.data() });
                         });
                         
-                        // Notifica sobre novo comentário
+                        // Notificação para novos comentários
                         const latestComment = loadedComments[loadedComments.length - 1];
                         if (latestComment && (Date.now() - latestComment.createdAt) < 10000 && latestComment.authorId !== user.uid) {
                             sendBrowserNotification("Novo Comentário", `${latestComment.author} comentou na nota.`);
@@ -250,13 +510,50 @@
                 };
             }, [user]);
 
-            // --- AÇÕES DO USUÁRIO ---
+            // --- HANDLERS ---
 
-            const handleLogin = (e) => {
-                e.preventDefault();
-                if (!username.trim()) return;
-                localStorage.setItem(`username_${user.uid}`, username);
-                setIsLoginModalOpen(false);
+            const handleLoginSuccess = () => {
+                setShowAuthModal(false);
+            };
+
+            const handleRegisterSuccess = (name) => {
+                setUsername(name);
+                setShowAuthModal(false);
+            };
+
+            const handleAnonymousLoginSuccess = () => {
+                setShowAuthModal(false);
+                // Para usuários anônimos, vamos pedir um nome depois
+                setTimeout(() => {
+                    const userName = prompt("Como gostaria de ser chamado?");
+                    if (userName) {
+                        setUsername(userName);
+                        localStorage.setItem(`username_${user.uid}`, userName);
+                    }
+                }, 500);
+            };
+
+            const handleLogout = async () => {
+                try {
+                    await auth.signOut();
+                } catch (error) {
+                    console.error("Erro ao sair:", error);
+                }
+            };
+
+            const requestNotificationPermission = () => {
+                if (!("Notification" in window)) {
+                    alert("Este navegador não suporta notificações de desktop.");
+                    return;
+                }
+                Notification.requestPermission().then(permission => {
+                    if (permission === "granted") {
+                        new Notification("Notificações Ativadas!", { 
+                            body: "Você receberá alertas de novas notas e comentários.",
+                            icon: "https://cdn-icons-png.flaticon.com/512/2965/2965358.png"
+                        });
+                    }
+                });
             };
 
             const handleSaveSettings = () => {
@@ -265,27 +562,6 @@
                 localStorage.setItem('email_public_key', emailConfig.publicKey);
                 setIsSettingsModalOpen(false);
                 alert("Configurações salvas!");
-            };
-
-            const sendEmailReminder = (noteData) => {
-                if (!emailConfig.serviceId || !emailConfig.publicKey) return;
-
-                try {
-                    emailjs.init(emailConfig.publicKey);
-                    
-                    const templateParams = {
-                        to_name: username,
-                        from_name: "ColabNotes App",
-                        message: `Lembrete da nota: ${noteData.title}\n\n${noteData.content}\n\nData: ${formatDate(noteData.reminderDate)}`,
-                        reply_to: "noreply@colabnotes.com"
-                    };
-
-                    emailjs.send(emailConfig.serviceId, emailConfig.templateId, templateParams)
-                        .then(() => console.log("Email enviado com sucesso!"))
-                        .catch((err) => console.error("Falha ao enviar email:", err));
-                } catch (e) {
-                    console.error("Erro EmailJS", e);
-                }
             };
 
             const handleSaveNote = async () => {
@@ -303,16 +579,10 @@
 
                 try {
                     if (activeNote) {
-                        // Editar
                         await db.collection('notes').doc(activeNote.id).update(noteData);
                     } else {
-                        // Criar
                         noteData.createdAt = Date.now();
                         await db.collection('notes').add(noteData);
-                        
-                        if (noteData.reminderDate) {
-                            sendEmailReminder(noteData);
-                        }
                     }
                     closeNoteModal();
                 } catch (err) {
@@ -325,14 +595,6 @@
                 if(!confirm("Tem certeza que deseja excluir esta nota?")) return;
                 try {
                     await db.collection('notes').doc(id).delete();
-                    // Deletar comentários relacionados
-                    const commentsSnapshot = await db.collection('comments').where('noteId', '==', id).get();
-                    const deletePromises = [];
-                    commentsSnapshot.forEach(doc => {
-                        deletePromises.push(doc.ref.delete());
-                    });
-                    await Promise.all(deletePromises);
-                    
                     if (activeNote && activeNote.id === id) closeNoteModal();
                 } catch (err) {
                     console.error(err);
@@ -353,8 +615,6 @@
                 try {
                     await db.collection('comments').add(commentData);
                     setNewComment('');
-                    
-                    sendBrowserNotification(`Novo comentário de ${username}`, newComment);
                 } catch (err) {
                     console.error(err);
                 }
@@ -381,14 +641,20 @@
                 setActiveNote(null);
             };
 
-            // Filtrar comentários da nota ativa
+            // Filtrar comentários
             const activeComments = activeNote 
                 ? comments.filter(c => c.noteId === activeNote.id) 
                 : [];
 
             // --- RENDERIZAÇÃO ---
 
-            if (loading) return <div className="flex h-screen items-center justify-center text-blue-600"><i className="fas fa-spinner fa-spin fa-3x"></i></div>;
+            if (loading && user) {
+                return (
+                    <div className="flex h-screen items-center justify-center">
+                        <div className="spinner"></div>
+                    </div>
+                );
+            }
 
             return (
                 <div className="min-h-screen pb-10 relative">
@@ -399,21 +665,38 @@
                                 <div className="bg-blue-600 text-white p-2 rounded-lg">
                                     <i className="fa-solid fa-note-sticky text-xl"></i>
                                 </div>
-                                <h1 className="text-xl font-bold text-gray-800 hidden sm:block">ColabNotes</h1>
+                                <h1 className="text-xl font-bold text-gray-800">ColabNotes</h1>
                             </div>
                             
                             <div className="flex items-center gap-4">
-                                <span className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full border">
-                                    <i className="fa-solid fa-user mr-2 text-blue-500"></i>
-                                    {username || 'Visitante'}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                        <i className="fa-solid fa-user text-blue-600"></i>
+                                    </div>
+                                    <div className="text-sm">
+                                        <div className="font-medium">{username}</div>
+                                        <div className="text-xs text-gray-500">
+                                            {user && !user.isAnonymous ? user.email : 'Usuário Anônimo'}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <button 
+                                    onClick={handleLogout}
+                                    className="text-gray-500 hover:text-red-600 transition p-2"
+                                    title="Sair"
+                                >
+                                    <i className="fa-solid fa-right-from-bracket"></i>
+                                </button>
+                                
                                 <button 
                                     onClick={() => setIsSettingsModalOpen(true)}
                                     className="p-2 text-gray-500 hover:text-blue-600 transition"
-                                    title="Configurações de Email"
+                                    title="Configurações"
                                 >
                                     <i className="fa-solid fa-gear text-lg"></i>
                                 </button>
+                                
                                 <button 
                                     onClick={openNewNote}
                                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition shadow-lg flex items-center gap-2"
@@ -465,68 +748,129 @@
                         )}
                     </main>
 
-                    {/* Modal: Identificação Inicial */}
+                    {/* Modal de Autenticação */}
                     <Modal 
-                        isOpen={isLoginModalOpen} 
-                        title="Bem-vindo ao ColabNotes"
-                        onClose={() => { if(username) setIsLoginModalOpen(false); }}
+                        isOpen={showAuthModal}
+                        title={authMode === 'login' ? 'Login - ColabNotes' : 'Criar Conta'}
+                        onClose={() => {}}
+                        size="lg"
                     >
-                        <div className="text-center">
-                            <p className="mb-4 text-gray-600">Para colaborar em tempo real, precisamos saber como te chamar.</p>
-                            <form onSubmit={handleLogin} className="space-y-4">
-                                <input 
-                                    type="text" 
-                                    placeholder="Seu Nome ou Apelido" 
-                                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    required
-                                />
-                                <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700">
-                                    Entrar
-                                </button>
-                            </form>
-                        </div>
+                        {authMode === 'login' ? (
+                            <LoginForm 
+                                onLoginSuccess={handleLoginSuccess}
+                                onSwitchToRegister={() => setAuthMode('register')}
+                            />
+                        ) : (
+                            <RegisterForm 
+                                onRegisterSuccess={handleRegisterSuccess}
+                                onSwitchToLogin={() => setAuthMode('login')}
+                            />
+                        )}
                     </Modal>
 
-                    {/* Modal: Configurações EmailJS */}
+                    {/* Modal: Configurações */}
                     <Modal 
                         isOpen={isSettingsModalOpen} 
-                        title="Configurações de Email (EmailJS)"
+                        title="Configurações"
                         onClose={() => setIsSettingsModalOpen(false)}
+                        size="lg"
                     >
-                        <div className="space-y-4">
-                            <p className="text-sm text-gray-500 bg-blue-50 p-3 rounded">
-                                <i className="fa-solid fa-circle-info mr-1"></i>
-                                Para ativar o envio de lembretes por email, crie uma conta gratuita em <a href="https://www.emailjs.com/" target="_blank" className="underline text-blue-700">emailjs.com</a> e insira suas credenciais aqui.
-                            </p>
-                            
-                            <div className="p-3 border rounded-lg bg-gray-50 flex justify-between items-center mb-4">
-                                <div>
-                                    <span className="font-bold text-gray-700 block">Notificações de Desktop</span>
-                                    <span className="text-xs text-gray-500">Receba alertas mesmo com o app minimizado</span>
+                        <div className="space-y-6">
+                            {/* Informações da Conta */}
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                                <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2">
+                                    <i className="fa-solid fa-user-circle"></i>
+                                    Sua Conta
+                                </h4>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Nome:</span>
+                                        <span className="font-medium">{username}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Email:</span>
+                                        <span className="font-medium">{user && user.email || 'Não informado'}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Tipo:</span>
+                                        <span className="font-medium">
+                                            {user && user.isAnonymous ? 'Anônimo' : 'Conta Registrada'}
+                                        </span>
+                                    </div>
                                 </div>
-                                <button 
-                                    onClick={requestNotificationPermission}
-                                    className="text-blue-600 font-bold text-sm hover:bg-blue-50 px-3 py-1 rounded transition border border-blue-200"
-                                >
-                                    Ativar / Testar
-                                </button>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Service ID</label>
-                                <input type="text" className="w-full p-2 border rounded mt-1" value={emailConfig.serviceId} onChange={e => setEmailConfig({...emailConfig, serviceId: e.target.value})} placeholder="ex: service_xyz" />
+                            {/* Notificações */}
+                            <div className="p-3 border rounded-lg bg-gray-50">
+                                <div className="flex justify-between items-center mb-2">
+                                    <div>
+                                        <span className="font-bold text-gray-700 block">Notificações de Desktop</span>
+                                        <span className="text-xs text-gray-500">Receba alertas mesmo com o app minimizado</span>
+                                    </div>
+                                    <button 
+                                        onClick={requestNotificationPermission}
+                                        className="text-blue-600 font-bold text-sm hover:bg-blue-50 px-3 py-1 rounded transition border border-blue-200"
+                                    >
+                                        Ativar / Testar
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Status: {Notification.permission === "granted" ? "✅ Ativado" : "⚠️ Não ativado"}
+                                </p>
                             </div>
+
+                            {/* Configurações EmailJS */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Template ID</label>
-                                <input type="text" className="w-full p-2 border rounded mt-1" value={emailConfig.templateId} onChange={e => setEmailConfig({...emailConfig, templateId: e.target.value})} placeholder="ex: template_abc" />
+                                <h4 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+                                    <i className="fa-solid fa-envelope"></i>
+                                    Configurações de Email (EmailJS)
+                                </h4>
+                                <p className="text-sm text-gray-500 bg-blue-50 p-3 rounded mb-4">
+                                    <i className="fa-solid fa-circle-info mr-1"></i>
+                                    Para ativar o envio de lembretes por email, crie uma conta gratuita em <a href="https://www.emailjs.com/" target="_blank" className="underline text-blue-700">emailjs.com</a>.
+                                </p>
+                                
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Service ID</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-2 border rounded mt-1" 
+                                            value={emailConfig.serviceId} 
+                                            onChange={e => setEmailConfig({...emailConfig, serviceId: e.target.value})} 
+                                            placeholder="ex: service_xyz" 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Template ID</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-2 border rounded mt-1" 
+                                            value={emailConfig.templateId} 
+                                            onChange={e => setEmailConfig({...emailConfig, templateId: e.target.value})} 
+                                            placeholder="ex: template_abc" 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Public Key</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-2 border rounded mt-1" 
+                                            value={emailConfig.publicKey} 
+                                            onChange={e => setEmailConfig({...emailConfig, publicKey: e.target.value})} 
+                                            placeholder="ex: user_12345" 
+                                        />
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Public Key</label>
-                                <input type="text" className="w-full p-2 border rounded mt-1" value={emailConfig.publicKey} onChange={e => setEmailConfig({...emailConfig, publicKey: e.target.value})} placeholder="ex: user_12345" />
-                            </div>
-                            <button onClick={handleSaveSettings} className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700">Salvar Configurações</button>
+
+                            <button 
+                                onClick={handleSaveSettings} 
+                                className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 flex items-center justify-center gap-2"
+                            >
+                                <i className="fa-solid fa-save"></i>
+                                Salvar Configurações
+                            </button>
                         </div>
                     </Modal>
 
@@ -613,13 +957,13 @@
                                     <div className="w-full sm:w-80 bg-gray-50 flex flex-col h-1/3 sm:h-auto border-t sm:border-t-0">
                                         <div className="p-4 border-b bg-white">
                                             <h3 className="font-bold text-gray-700 flex items-center gap-2">
-                                                <i className="fa-regular fa-comments"></i> Comentários
+                                                <i className="fa-regular fa-comments"></i> Comentários ({activeComments.length})
                                             </h3>
                                         </div>
                                         
                                         <div className="flex-1 overflow-y-auto p-4 space-y-3">
                                             {activeComments.length === 0 && (
-                                                <p className="text-center text-gray-400 text-sm mt-4">Nenhum comentário ainda.</p>
+                                                <p className="text-center text-gray-400 text-sm mt-4">Seja o primeiro a comentar!</p>
                                             )}
                                             {activeComments.map(comment => (
                                                 <div key={comment.id} className={`bg-white p-3 rounded-lg shadow-sm border ${comment.authorId === user.uid ? 'border-blue-100' : 'border-gray-100'}`}>
@@ -663,4 +1007,4 @@
         root.render(<App />);
     </script>
 </body>
-  </html>
+</html>
