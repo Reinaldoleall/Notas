@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Notes - Bloco de Notas</title>
+   
     
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -29,10 +29,18 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Firebase SDKs (ATUALIZADO) -->
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+    <!-- EmailJS -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <script type="text/javascript">
+        (function() {
+            emailjs.init("user_your_user_id_here"); // Substitua com seu User ID do EmailJS
+        })();
+    </script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -294,19 +302,52 @@
                 }
             };
 
-            const getGoogleCalendarUrl = (note) => {
+            const formatDateTimeForInput = (timestamp) => {
                 try {
-                    if (!note.reminderDate) return '#';
+                    if (!timestamp) return '';
+                    const date = new Date(timestamp);
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
                     
-                    const startDate = new Date(note.reminderDate).toISOString().replace(/-|:|\.\d\d\d/g, "");
-                    const endDate = new Date(new Date(note.reminderDate).getTime() + 60*60*1000).toISOString().replace(/-|:|\.\d\d\d/g, "");
-                    
-                    const title = encodeURIComponent(note.title || 'Nota sem título');
-                    const details = encodeURIComponent((note.content || '') + "\n\n(Criado via ColabNotes)");
-                    
-                    return `https://www.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startDate}/${endDate}&details=${details}`;
+                    return `${year}-${month}-${day}T${hours}:${minutes}`;
                 } catch (e) {
-                    return '#';
+                    return '';
+                }
+            };
+
+            // Função para enviar lembrete por email usando EmailJS
+            const sendReminderEmail = async (noteData, userEmail) => {
+                try {
+                    if (!userEmail || userEmail === 'Usuário anônimo') {
+                        console.log("Não é possível enviar email: usuário não tem email registrado");
+                        return false;
+                    }
+
+                    // Configuração do EmailJS (substitua com suas credenciais)
+                    const templateParams = {
+                        to_email: userEmail,
+                        from_name: 'Sistema de Notas',
+                        note_title: noteData.title,
+                        note_content: noteData.content.substring(0, 200) + '...', // Limita conteúdo
+                        reminder_date: formatDateFull(noteData.reminderDate),
+                        current_date: formatDateFull(Date.now())
+                    };
+
+                    // Envia o email usando EmailJS
+                    const response = await emailjs.send(
+                        'service_your_service_id', // Substitua com seu Service ID
+                        'template_your_template_id', // Substitua com seu Template ID
+                        templateParams
+                    );
+
+                    console.log('✅ Email de lembrete enviado com sucesso:', response);
+                    return true;
+                } catch (error) {
+                    console.error('❌ Erro ao enviar email de lembrete:', error);
+                    return false;
                 }
             };
 
@@ -404,7 +445,6 @@
                 const [isLogin, setIsLogin] = React.useState(true);
                 const [loading, setLoading] = React.useState(false);
                 const [error, setError] = React.useState('');
-                const [showEmailLogin, setShowEmailLogin] = React.useState(false);
                 const [isProcessing, setIsProcessing] = React.useState(false);
 
                 const handleEmailSubmit = async (e) => {
@@ -474,26 +514,6 @@
                     }
                 };
 
-                const handleGoogleLogin = async () => {
-                    if (isProcessing) return;
-                    
-                    setIsProcessing(true);
-                    try {
-                        const provider = new firebase.auth.GoogleAuthProvider();
-                        provider.addScope('profile');
-                        provider.addScope('email');
-                        console.log("Tentando login com Google...");
-                        await auth.signInWithPopup(provider);
-                        console.log("Login com Google bem-sucedido!");
-                        onLoginSuccess();
-                    } catch (err) {
-                        console.error("Erro no login com Google:", err);
-                        setError('Erro ao fazer login com Google. Tente novamente.');
-                    } finally {
-                        setIsProcessing(false);
-                    }
-                };
-
                 const handleAnonymousLogin = async () => {
                     if (isProcessing) return;
                     
@@ -511,33 +531,15 @@
                     }
                 };
 
-                const handleGitHubLogin = async () => {
-                    if (isProcessing) return;
-                    
-                    setIsProcessing(true);
-                    try {
-                        const provider = new firebase.auth.GithubAuthProvider();
-                        console.log("Tentando login com GitHub...");
-                        await auth.signInWithPopup(provider);
-                        console.log("Login com GitHub bem-sucedido!");
-                        onLoginSuccess();
-                    } catch (err) {
-                        console.error("Erro no login com GitHub:", err);
-                        setError('Erro ao fazer login com GitHub. Tente novamente.');
-                    } finally {
-                        setIsProcessing(false);
-                    }
-                };
-
                 return (
                     <div className="login-container">
                         <div className="login-card">
                             <div className="login-header">
                                 <div className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-6">
-                                    <i className="fa-solid fa-users text-4xl text-white"></i>
+                                    <i className="fa-solid fa-sticky-note text-4xl text-white"></i>
                                 </div>
-                                <h1 className="text-3xl font-bold mb-2">Padula - Notes</h1>
-                                <p className="text-white/90">Notas colaborativas em tempo real</p>
+                                <h1 className="text-3xl font-bold mb-2">Notas</h1>
+                                <p className="text-white/90">Bloco de notas colaborativo</p>
                             </div>
                             
                             <div className="login-body">
@@ -551,172 +553,113 @@
                                     </div>
                                 )}
 
-                                {!showEmailLogin ? (
-                                    <>
-                                        <div className="text-center mb-8">
-                                            <h2 className="text-2xl font-bold text-gray-800 mb-2">
-                                                {isLogin ? 'Bem-vindo de volta!' : 'Crie sua conta'}
-                                            </h2>
-                                            <p className="text-gray-600">
-                                                {isLogin ? 'Entre para colaborar em tempo real' : 'Junte-se à comunidade colaborativa'}
-                                            </p>
-                                        </div>
+                                <div className="text-center mb-8">
+                                    <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                                        {isLogin ? 'Bem-vindo de volta!' : 'Crie sua conta'}
+                                    </h2>
+                                    <p className="text-gray-600">
+                                        {isLogin ? 'Entre para criar e colaborar em notas' : 'Registre-se para começar a usar'}
+                                    </p>
+                                </div>
 
-                                        <div className="space-y-4 mb-8">
-                                            <button
-                                                onClick={handleGoogleLogin}
+                                <form onSubmit={handleEmailSubmit} className="space-y-6">
+                                    {!isLogin && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                <i className="fa-solid fa-user mr-2"></i>
+                                                Seu nome
+                                            </label>
+                                            <input
+                                                type="text"
+                                                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                                placeholder="Como gostaria de ser chamado?"
+                                                value={name}
+                                                onChange={(e) => setName(e.target.value)}
+                                                required={!isLogin}
                                                 disabled={isProcessing}
-                                                className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 text-gray-700 px-4 py-4 rounded-xl hover:bg-gray-50 transition-all duration-200 shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                <i className="fa-brands fa-google text-red-500 text-lg"></i>
-                                               
-                                            </button>
-                                            
-                                            <button
-                                                onClick={handleGitHubLogin}
-                                                disabled={isProcessing}
-                                                className="w-full flex items-center justify-center gap-3 bg-gray-800 text-white px-4 py-4 rounded-xl hover:bg-gray-900 transition-all duration-200 shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                <i className="fa-brands fa-github text-lg"></i>
-                                              
-                                            </button>
-
-                                            <button
-                                                onClick={handleAnonymousLogin}
-                                                disabled={isProcessing}
-                                                className="w-full flex items-center justify-center gap-3 bg-gray-100 text-gray-700 px-4 py-4 rounded-xl hover:bg-gray-200 transition-all duration-200 border border-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                <i className="fa-solid fa-user-secret"></i>
-                                             
-                                            </button>
+                                            />
                                         </div>
+                                    )}
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            <i className="fa-solid fa-envelope mr-2"></i>
+                                            Email
+                                        </label>
+                                        <input
+                                            type="email"
+                                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                            placeholder="seu@email.com"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            required
+                                            disabled={isProcessing}
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            <i className="fa-solid fa-lock mr-2"></i>
+                                            Senha
+                                        </label>
+                                        <input
+                                            type="password"
+                                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                            placeholder={isLogin ? "Sua senha" : "Mínimo 6 caracteres"}
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            required
+                                            minLength={isLogin ? undefined : 6}
+                                            disabled={isProcessing}
+                                        />
+                                    </div>
 
-                                        <div className="relative mb-8">
-                                            <div className="absolute inset-0 flex items-center">
-                                                <div className="w-full border-t border-gray-300"></div>
-                                            </div>
-                                            <div className="relative flex justify-center">
-                                                <button
-                                                    onClick={() => setShowEmailLogin(true)}
-                                                    disabled={isProcessing}
-                                                    className="bg-white px-4 text-sm text-gray-600 hover:text-gray-800 font-medium disabled:opacity-50"
-                                                >
-                                                    Ou entre com email
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div className="text-center">
-                                            <button
-                                                onClick={() => setIsLogin(!isLogin)}
-                                                disabled={isProcessing}
-                                                className="text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
-                                            >
-                                                {isLogin ? 'Não tem conta? Crie uma agora' : 'Já tem conta? Faça login'}
-                                            </button>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <form onSubmit={handleEmailSubmit} className="space-y-6">
-                                        <div className="text-center mb-6">
-                                            <h2 className="text-2xl font-bold text-gray-800 mb-2">
-                                                {isLogin ? 'Entrar com Email' : 'Criar Conta'}
-                                            </h2>
-                                            <p className="text-gray-600">
-                                                {isLogin ? 'Digite suas credenciais' : 'Preencha seus dados'}
-                                            </p>
-                                        </div>
-
-                                        {!isLogin && (
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                    <i className="fa-solid fa-user mr-2"></i>
-                                                    Seu nome
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                                                    placeholder="Como gostaria de ser chamado?"
-                                                    value={name}
-                                                    onChange={(e) => setName(e.target.value)}
-                                                    required={!isLogin}
-                                                    disabled={isProcessing}
-                                                />
-                                            </div>
+                                    <button
+                                        type="submit"
+                                        disabled={loading || isProcessing}
+                                        className="w-full gradient-primary text-white py-4 rounded-xl font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-3"
+                                    >
+                                        {loading ? (
+                                            <>
+                                                <div className="spinner-small"></div>
+                                                {isLogin ? 'Entrando...' : 'Criando conta...'}
+                                            </>
+                                        ) : (
+                                            <>
+                                                <i className={`fa-solid ${isLogin ? 'fa-sign-in-alt' : 'fa-user-plus'}`}></i>
+                                                {isLogin ? 'Entrar' : 'Criar Conta'}
+                                            </>
                                         )}
-                                        
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                <i className="fa-solid fa-envelope mr-2"></i>
-                                                Email
-                                            </label>
-                                            <input
-                                                type="email"
-                                                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                                                placeholder="seu@email.com"
-                                                value={email}
-                                                onChange={(e) => setEmail(e.target.value)}
-                                                required
-                                                disabled={isProcessing}
-                                            />
-                                        </div>
-                                        
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                                <i className="fa-solid fa-lock mr-2"></i>
-                                                Senha
-                                            </label>
-                                            <input
-                                                type="password"
-                                                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                                                placeholder={isLogin ? "Sua senha" : "Mínimo 6 caracteres"}
-                                                value={password}
-                                                onChange={(e) => setPassword(e.target.value)}
-                                                required
-                                                minLength={isLogin ? undefined : 6}
-                                                disabled={isProcessing}
-                                            />
-                                        </div>
+                                    </button>
+                                </form>
 
-                                        <button
-                                            type="submit"
-                                            disabled={loading || isProcessing}
-                                            className="w-full gradient-primary text-white py-4 rounded-xl font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-3"
-                                        >
-                                            {loading ? (
-                                                <>
-                                                    <div className="spinner-small"></div>
-                                                    {isLogin ? 'Entrando...' : 'Criando conta...'}
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <i className={`fa-solid ${isLogin ? 'fa-sign-in-alt' : 'fa-user-plus'}`}></i>
-                                                    {isLogin ? 'Entrar' : 'Criar Conta'}
-                                                </>
-                                            )}
-                                        </button>
+                                <div className="relative my-6">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t border-gray-300"></div>
+                                    </div>
+                                    <div className="relative flex justify-center">
+                                        <span className="bg-white px-4 text-sm text-gray-500">Ou</span>
+                                    </div>
+                                </div>
 
-                                        <div className="text-center space-y-3">
-                                            <button
-                                                onClick={() => setShowEmailLogin(false)}
-                                                disabled={isProcessing}
-                                                className="text-gray-600 hover:text-gray-800 font-medium disabled:opacity-50"
-                                            >
-                                                ← Voltar para outras opções
-                                            </button>
-                                            
-                                            <div>
-                                                <button
-                                                    onClick={() => setIsLogin(!isLogin)}
-                                                    disabled={isProcessing}
-                                                    className="text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
-                                                >
-                                                    {isLogin ? 'Não tem conta? Registre-se' : 'Já tem conta? Faça login'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </form>
-                                )}
+                                <button
+                                    onClick={handleAnonymousLogin}
+                                    disabled={isProcessing}
+                                    className="w-full flex items-center justify-center gap-3 bg-gray-100 text-gray-700 px-4 py-4 rounded-xl hover:bg-gray-200 transition-all duration-200 border border-gray-200 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
+                                >
+                                    <i className="fa-solid fa-user-secret"></i>
+                                    <span className="font-medium">Continuar como Visitante</span>
+                                </button>
+
+                                <div className="text-center">
+                                    <button
+                                        onClick={() => setIsLogin(!isLogin)}
+                                        disabled={isProcessing}
+                                        className="text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
+                                    >
+                                        {isLogin ? 'Não tem conta? Crie uma agora' : 'Já tem conta? Faça login'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -806,14 +749,18 @@
                 const [formDate, setFormDate] = React.useState('');
                 const [newComment, setNewComment] = React.useState('');
                 
-                // Configurações
+                // Configurações EmailJS
                 const [emailConfig, setEmailConfig] = React.useState({
                     serviceId: localStorage.getItem('email_service_id') || '',
                     templateId: localStorage.getItem('email_template_id') || '',
-                    publicKey: localStorage.getItem('email_public_key') || ''
+                    publicKey: localStorage.getItem('email_public_key') || '',
+                    userEmail: ''
                 });
                 const [notificationEnabled, setNotificationEnabled] = React.useState(
                     localStorage.getItem('notifications_enabled') !== 'false'
+                );
+                const [emailRemindersEnabled, setEmailRemindersEnabled] = React.useState(
+                    localStorage.getItem('email_reminders_enabled') === 'true'
                 );
 
                 // ============================================
@@ -841,7 +788,7 @@
                                     } else {
                                         displayName = 'Visitante';
                                     }
-                                    email = null;
+                                    email = 'Usuário anônimo';
                                 } else {
                                     displayName = u.displayName || u.email?.split('@')[0] || 'Usuário';
                                     email = u.email;
@@ -858,6 +805,7 @@
                                 
                                 setUsername(displayName);
                                 setUserEmail(email);
+                                setEmailConfig(prev => ({...prev, userEmail: email}));
                                 setShowLogin(false);
                                 
                                 // Solicita permissão de notificação
@@ -974,7 +922,7 @@
                                     if (loadedNotes.length > 0 && notificationEnabled) {
                                         const lastNote = loadedNotes[0];
                                         sendBrowserNotification(
-                                            "📝 Nova Atividade no ColabNotes!", 
+                                            "📝 Nova Atividade nas Notas!", 
                                             `Agora temos ${loadedNotes.length} notas colaborativas`
                                         );
                                     }
@@ -1048,6 +996,43 @@
                     }
                 }, [user]);
 
+                // Efeito 7: Verificar lembretes pendentes
+                React.useEffect(() => {
+                    if (!user || !emailRemindersEnabled) return;
+
+                    const checkReminders = () => {
+                        try {
+                            const now = Date.now();
+                            notes.forEach(note => {
+                                if (note.reminderDate && note.authorId === user.uid) {
+                                    const reminderTime = new Date(note.reminderDate).getTime();
+                                    const timeDiff = reminderTime - now;
+                                    
+                                    // Se o lembrete está dentro de 5 minutos no futuro e ainda não foi enviado
+                                    if (timeDiff > 0 && timeDiff <= 5 * 60 * 1000) {
+                                        const reminderKey = `reminder_sent_${note.id}`;
+                                        if (!localStorage.getItem(reminderKey)) {
+                                            sendReminderEmail(note, userEmail).then(success => {
+                                                if (success) {
+                                                    localStorage.setItem(reminderKey, 'true');
+                                                    console.log(`Lembrete enviado para nota: ${note.title}`);
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                            });
+                        } catch (error) {
+                            console.error("Erro ao verificar lembretes:", error);
+                        }
+                    };
+
+                    checkReminders();
+                    const interval = setInterval(checkReminders, 60000); // Verifica a cada minuto
+
+                    return () => clearInterval(interval);
+                }, [notes, user, emailRemindersEnabled, userEmail]);
+
                 // ============================================
                 // HANDLERS PRINCIPAIS
                 // ============================================
@@ -1078,10 +1063,34 @@
                         return;
                     }
 
+                    // Converte a data/hora para timestamp
+                    let reminderTimestamp = null;
+                    if (formDate) {
+                        reminderTimestamp = new Date(formDate).getTime();
+                        
+                        // Envia email de lembrete se estiver habilitado
+                        if (emailRemindersEnabled && userEmail && userEmail !== 'Usuário anônimo') {
+                            const noteData = {
+                                title: formTitle,
+                                content: formContent,
+                                reminderDate: reminderTimestamp
+                            };
+                            
+                            // Verifica se o lembrete é futuro
+                            if (reminderTimestamp > Date.now()) {
+                                sendReminderEmail(noteData, userEmail).then(success => {
+                                    if (success) {
+                                        console.log("Lembrete agendado e email enviado");
+                                    }
+                                });
+                            }
+                        }
+                    }
+
                     const noteData = {
                         title: formTitle,
                         content: formContent,
-                        reminderDate: formDate,
+                        reminderDate: reminderTimestamp,
                         author: username,
                         authorId: user.uid,
                         updatedAt: Date.now(),
@@ -1270,7 +1279,7 @@
                 const openEditNote = (note) => {
                     setFormTitle(note.title || '');
                     setFormContent(note.content || '');
-                    setFormDate(note.reminderDate || '');
+                    setFormDate(formatDateTimeForInput(note.reminderDate));
                     setActiveNote(note);
                     setIsNoteModalOpen(true);
                     
@@ -1297,10 +1306,28 @@
                     }
                 };
 
+                const toggleEmailReminders = () => {
+                    const newValue = !emailRemindersEnabled;
+                    setEmailRemindersEnabled(newValue);
+                    localStorage.setItem('email_reminders_enabled', newValue);
+                    
+                    if (newValue) {
+                        alert("✅ Lembretes por email ativados! Você receberá emails para seus lembretes.");
+                    } else {
+                        alert("🔕 Lembretes por email desativados.");
+                    }
+                };
+
                 const handleSaveSettings = () => {
                     localStorage.setItem('email_service_id', emailConfig.serviceId);
                     localStorage.setItem('email_template_id', emailConfig.templateId);
                     localStorage.setItem('email_public_key', emailConfig.publicKey);
+                    
+                    // Inicializa EmailJS com a nova configuração
+                    if (emailConfig.publicKey) {
+                        emailjs.init(emailConfig.publicKey);
+                    }
+                    
                     setIsSettingsOpen(false);
                     alert("✅ Configurações salvas com sucesso!");
                 };
@@ -1347,6 +1374,12 @@
                 const pinnedNotesCount = notes.filter(n => n.isPinned).length;
                 const activeComments = activeNote ? comments.filter(c => c.noteId === activeNote.id) : [];
 
+                // Contar notas com lembretes
+                const notesWithReminders = notes.filter(n => n.reminderDate).length;
+                const upcomingReminders = notes.filter(n => 
+                    n.reminderDate && new Date(n.reminderDate) > new Date()
+                ).length;
+
                 // Usuário atual para componente OnlineUsers
                 const currentUser = {
                     id: user?.uid,
@@ -1366,7 +1399,7 @@
                             <div className="text-center space-y-6">
                                 <div className="spinner"></div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-gray-800 mb-2">Carregando ColabNotes</h2>
+                                    <h2 className="text-2xl font-bold text-gray-800 mb-2">Carregando Notas</h2>
                                     <p className="text-gray-600">Preparando seu espaço colaborativo...</p>
                                 </div>
                             </div>
@@ -1389,11 +1422,11 @@
                                     {/* Logo e título */}
                                     <div className="flex items-center gap-3">
                                         <div className="bg-white/20 backdrop-blur-sm p-3 rounded-xl">
-                                            <i className="fa-solid fa-users text-2xl"></i>
+                                            <i className="fa-solid fa-sticky-note text-2xl"></i>
                                         </div>
                                         <div>
-                                            <h1 className="text-2xl font-bold">ColabNotes</h1>
-                                            <p className="text-white/80 text-sm">Notas colaborativas em tempo real</p>
+                                            <h1 className="text-2xl font-bold">Notas</h1>
+                                            <p className="text-white/80 text-sm">Bloco de notas colaborativo</p>
                                         </div>
                                     </div>
                                     
@@ -1449,7 +1482,8 @@
                                         { id: 'all', label: 'Todas', icon: 'layer-group', count: notes.length },
                                         { id: 'my', label: 'Minhas', icon: 'user', count: userNotesCount },
                                         { id: 'pinned', label: 'Fixadas', icon: 'thumbtack', count: pinnedNotesCount },
-                                        { id: 'starred', label: 'Populares', icon: 'star', count: notes.filter(n => (n.likeCount || 0) > 0).length }
+                                        { id: 'starred', label: 'Populares', icon: 'star', count: notes.filter(n => (n.likeCount || 0) > 0).length },
+                                        { id: 'reminders', label: 'Lembretes', icon: 'bell', count: notesWithReminders }
                                     ].map(tab => (
                                         <button
                                             key={tab.id}
@@ -1485,7 +1519,7 @@
                                     { 
                                         title: 'Total de Notas', 
                                         value: notes.length, 
-                                        icon: 'note-sticky', 
+                                        icon: 'sticky-note', 
                                         color: 'blue',
                                         change: '+12%'
                                     },
@@ -1504,11 +1538,11 @@
                                         change: '+18%'
                                     },
                                     { 
-                                        title: 'Usuários Online', 
-                                        value: onlineUsers.length + 1, 
-                                        icon: 'users', 
+                                        title: 'Lembretes', 
+                                        value: notesWithReminders, 
+                                        icon: 'bell', 
                                         color: 'purple',
-                                        change: 'Ativo'
+                                        change: `${upcomingReminders} ativos`
                                     }
                                 ].map((stat, idx) => (
                                     <div key={idx} className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300">
@@ -1517,7 +1551,7 @@
                                                 <p className="text-sm text-gray-500 font-medium mb-1">{stat.title}</p>
                                                 <p className="text-3xl font-bold text-gray-800">{stat.value}</p>
                                                 <p className="text-xs text-gray-400 mt-1">
-                                                    <span className={`font-medium ${stat.color === 'blue' ? 'text-blue-600' : stat.color === 'green' ? 'text-green-600' : stat.color === 'red' ? 'text-red-600' : 'text-purple-600'}`}>{stat.change}</span> este mês
+                                                    <span className={`font-medium ${stat.color === 'blue' ? 'text-blue-600' : stat.color === 'green' ? 'text-green-600' : stat.color === 'red' ? 'text-red-600' : 'text-purple-600'}`}>{stat.change}</span>
                                                 </p>
                                             </div>
                                             <div className={`${stat.color === 'blue' ? 'bg-blue-100' : stat.color === 'green' ? 'bg-green-100' : stat.color === 'red' ? 'bg-red-100' : 'bg-purple-100'} p-3 rounded-xl`}>
@@ -1538,12 +1572,14 @@
                                         {activeTab === 'my' ? 'Você ainda não criou notas' : 
                                          activeTab === 'pinned' ? 'Nenhuma nota fixada' :
                                          activeTab === 'starred' ? 'Nenhuma nota com likes' :
+                                         activeTab === 'reminders' ? 'Nenhuma nota com lembretes' :
                                          'Nenhuma nota ainda'}
                                     </h3>
                                     <p className="text-gray-600 mb-8 max-w-md mx-auto">
                                         {activeTab === 'my' ? 'Crie sua primeira nota e compartilhe com a comunidade!' :
                                          activeTab === 'pinned' ? 'Fixar notas as mantém no topo para fácil acesso' :
                                          activeTab === 'starred' ? 'Dê like nas notas que você gostar!' :
+                                         activeTab === 'reminders' ? 'Adicione lembretes às suas notas para receber emails!' :
                                          'Seja o primeiro a criar uma nota colaborativa!'}
                                     </p>
                                     <button
@@ -1615,9 +1651,13 @@
                                                 )}
                                                 
                                                 {/* Lembrete badge */}
-                                                {note.reminderDate && new Date(note.reminderDate) > new Date() && (
-                                                    <div className="absolute top-12 right-4 bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 z-10">
-                                                        <i className="fa-regular fa-clock"></i>
+                                                {note.reminderDate && (
+                                                    <div className={`absolute ${note.isPinned || note.authorId === user?.uid ? 'top-16' : 'top-4'} right-4 px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 z-10 ${
+                                                        new Date(note.reminderDate) > new Date() 
+                                                            ? 'bg-green-100 text-green-800' 
+                                                            : 'bg-gray-100 text-gray-800'
+                                                    }`}>
+                                                        <i className="fa-regular fa-bell"></i>
                                                         {formatDate(note.reminderDate)}
                                                     </div>
                                                 )}
@@ -1697,7 +1737,7 @@
                                         <div>
                                             <h4 className="font-bold text-gray-800 text-lg flex items-center gap-2">
                                                 <i className="fa-solid fa-bell"></i>
-                                                Notificações
+                                                Notificações do Navegador
                                             </h4>
                                             <p className="text-sm text-gray-600 mt-1">Receba alertas de novas notas e comentários</p>
                                         </div>
@@ -1715,6 +1755,108 @@
                                     <p className="text-xs text-gray-500">
                                         Status: {Notification.permission === "granted" ? "✅ Permissão concedida" : "⚠️ Permissão necessária"}
                                     </p>
+                                </div>
+
+                                {/* Configurações de EmailJS */}
+                                <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-5 rounded-xl border border-purple-100">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div>
+                                            <h4 className="font-bold text-gray-800 text-lg flex items-center gap-2">
+                                                <i className="fa-solid fa-envelope"></i>
+                                                Lembretes por Email
+                                            </h4>
+                                            <p className="text-sm text-gray-600 mt-1">Receba emails para seus lembretes de notas</p>
+                                        </div>
+                                        <button
+                                            onClick={toggleEmailReminders}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                                emailRemindersEnabled ? 'bg-green-500' : 'bg-gray-300'
+                                            }`}
+                                        >
+                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                                emailRemindersEnabled ? 'translate-x-6' : 'translate-x-1'
+                                            }`} />
+                                        </button>
+                                    </div>
+                                    
+                                    {emailRemindersEnabled && (
+                                        <div className="mt-4 space-y-3">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Email do Usuário
+                                                </label>
+                                                <input
+                                                    type="email"
+                                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition text-sm"
+                                                    value={userEmail || ''}
+                                                    readOnly
+                                                    disabled
+                                                />
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    {userEmail === 'Usuário anônimo' 
+                                                        ? '⚠️ Usuários anônimos não podem receber emails'
+                                                        : '✅ Este email receberá os lembretes'}
+                                                </p>
+                                            </div>
+                                            
+                                            <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
+                                                <p className="text-sm text-yellow-700">
+                                                    <i className="fa-solid fa-info-circle mr-1"></i>
+                                                    Para configurar o EmailJS, você precisa:
+                                                </p>
+                                                <ol className="text-xs text-yellow-600 mt-2 ml-4 list-decimal">
+                                                    <li>Criar conta em <a href="https://www.emailjs.com" target="_blank" className="underline">emailjs.com</a></li>
+                                                    <li>Criar um serviço de email e template</li>
+                                                    <li>Copiar suas chaves abaixo</li>
+                                                </ol>
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Public Key do EmailJS
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition text-sm"
+                                                    placeholder="Sua Public Key"
+                                                    value={emailConfig.publicKey}
+                                                    onChange={(e) => setEmailConfig({...emailConfig, publicKey: e.target.value})}
+                                                />
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Service ID
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition text-sm"
+                                                        placeholder="Service ID"
+                                                        value={emailConfig.serviceId}
+                                                        onChange={(e) => setEmailConfig({...emailConfig, serviceId: e.target.value})}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Template ID
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition text-sm"
+                                                        placeholder="Template ID"
+                                                        value={emailConfig.templateId}
+                                                        onChange={(e) => setEmailConfig({...emailConfig, templateId: e.target.value})}
+                                                    />
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="text-xs text-gray-500">
+                                                <i className="fa-solid fa-lightbulb mr-1"></i>
+                                                Os emails serão enviados automaticamente 5 minutos antes do horário do lembrete.
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Informações da conta */}
@@ -1770,7 +1912,7 @@
                                         className="bg-gradient-to-r from-red-500 to-pink-500 text-white py-3 rounded-xl font-bold hover:opacity-90 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
                                     >
                                         <i className="fa-solid fa-right-from-bracket"></i>
-                                        Sair do ColabNotes
+                                        Sair do Sistema
                                     </button>
                                 </div>
                             </div>
@@ -1804,7 +1946,7 @@
                                             <div>
                                                 <div className="font-bold text-gray-800">{username} <span className="text-blue-600">(Você)</span></div>
                                                 <div className="text-sm text-gray-600 flex items-center gap-1">
-                                                    <i className="fa-solid fa-note-sticky"></i>
+                                                    <i className="fa-solid fa-sticky-note"></i>
                                                     {userNotesCount} notas • {comments.filter(c => c.authorId === user?.uid).length} comentários
                                                 </div>
                                             </div>
@@ -1945,8 +2087,8 @@
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     <div>
                                                         <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                                                            <i className="fa-regular fa-clock"></i>
-                                                            Data do Lembrete
+                                                            <i className="fa-regular fa-bell"></i>
+                                                            Data/Hora do Lembrete
                                                         </label>
                                                         <input 
                                                             type="datetime-local" 
@@ -1954,21 +2096,43 @@
                                                             value={formDate}
                                                             onChange={(e) => setFormDate(e.target.value)}
                                                         />
+                                                        <div className="mt-2 text-sm text-gray-600 flex items-start gap-2">
+                                                            <i className="fa-solid fa-info-circle mt-0.5"></i>
+                                                            <div>
+                                                                {emailRemindersEnabled ? (
+                                                                    <p>✅ Você receberá um email 5 minutos antes do lembrete</p>
+                                                                ) : (
+                                                                    <p>🔕 Ative os lembretes por email nas configurações</p>
+                                                                )}
+                                                                {userEmail === 'Usuário anônimo' && (
+                                                                    <p className="text-yellow-600 mt-1">⚠️ Usuários anônimos não podem receber emails</p>
+                                                                )}
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                     
-                                                    {activeNote && formDate && (
+                                                    {formDate && (
                                                         <div className="flex items-end">
-                                                            <a 
-                                                                href={getGoogleCalendarUrl({title: formTitle, content: formContent, reminderDate: formDate})} 
-                                                                target="_blank"
-                                                                className="flex items-center gap-2 text-blue-600 hover:text-blue-800 bg-blue-50 px-4 py-3 rounded-xl transition-all hover:bg-blue-100 w-full"
-                                                            >
-                                                                <i className="fa-brands fa-google"></i>
-                                                                <div>
-                                                                    <div className="font-medium">Adicionar ao Google Agenda</div>
-                                                                    <div className="text-xs text-blue-600">Crie um evento automaticamente</div>
-                                                                </div>
-                                                            </a>
+                                                            <div className="bg-blue-50 p-4 rounded-xl w-full">
+                                                                <p className="text-sm font-medium text-blue-800 mb-1">
+                                                                    <i className="fa-regular fa-clock mr-1"></i>
+                                                                    Lembrete Programado
+                                                                </p>
+                                                                <p className="text-blue-600 font-semibold">
+                                                                    {new Date(formDate).toLocaleDateString('pt-BR', {
+                                                                        day: '2-digit',
+                                                                        month: '2-digit',
+                                                                        year: 'numeric',
+                                                                        hour: '2-digit',
+                                                                        minute: '2-digit'
+                                                                    })}
+                                                                </p>
+                                                                <p className="text-xs text-blue-500 mt-1">
+                                                                    {emailRemindersEnabled && userEmail !== 'Usuário anônimo'
+                                                                        ? 'Email será enviado automaticamente'
+                                                                        : 'Configure o EmailJS para receber emails'}
+                                                                </p>
+                                                            </div>
                                                         </div>
                                                     )}
                                                 </div>
@@ -2099,12 +2263,12 @@
                                     <div className="text-center md:text-left">
                                         <div className="flex items-center justify-center md:justify-start gap-3 mb-3">
                                             <div className="gradient-primary p-2 rounded-lg">
-                                                <i className="fa-solid fa-users text-white text-xl"></i>
+                                                <i className="fa-solid fa-sticky-note text-white text-xl"></i>
                                             </div>
-                                            <h3 className="text-xl font-bold text-gray-800">ColabNotes</h3>
+                                            <h3 className="text-xl font-bold text-gray-800">Notas</h3>
                                         </div>
                                         <p className="text-gray-600 max-w-md">
-                                            Plataforma colaborativa de notas em tempo real. 
+                                            Sistema colaborativo de notas em tempo real. 
                                             Crie, compartilhe e colabore com sua equipe instantaneamente.
                                         </p>
                                     </div>
@@ -2131,7 +2295,7 @@
                                 
                                 <div className="mt-8 pt-8 border-t border-gray-200 text-center text-sm text-gray-500">
                                     <p>
-                                        <strong>ColabNotes v2.0</strong> • Desenvolvido com React + Firebase • 
+                                        <strong>Notas v2.0</strong> • Desenvolvido com React + Firebase + EmailJS • 
                                         {new Date().getFullYear()} • Todas as notas são públicas e colaborativas
                                     </p>
                                 </div>
@@ -2147,14 +2311,14 @@
             try {
                 const root = ReactDOM.createRoot(document.getElementById('root'));
                 root.render(<App />);
-                console.log("🚀 ColabNotes iniciado com sucesso!");
+                console.log("🚀 Sistema de Notas iniciado com sucesso!");
             } catch (error) {
                 console.error("❌ Erro crítico ao iniciar:", error);
                 document.getElementById('root').innerHTML = `
                     <div class="flex h-screen items-center justify-center bg-gradient-to-br from-red-50 to-pink-50">
                         <div class="text-center p-8 bg-white rounded-2xl shadow-2xl max-w-md">
                             <div class="text-red-500 text-6xl mb-4">⚠️</div>
-                            <h1 class="text-2xl font-bold text-gray-800 mb-3">Erro ao carregar o ColabNotes</h1>
+                            <h1 class="text-2xl font-bold text-gray-800 mb-3">Erro ao carregar o Sistema de Notas</h1>
                             <p class="text-gray-600 mb-6">Ocorreu um erro crítico ao inicializar a aplicação.</p>
                             <div class="space-y-3">
                                 <button onclick="window.location.reload()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold transition-all">
@@ -2177,7 +2341,7 @@
                 <div class="flex h-screen items-center justify-center bg-gradient-to-br from-red-50 to-pink-50">
                     <div class="text-center p-8 bg-white rounded-2xl shadow-2xl max-w-md">
                         <div class="text-red-500 text-6xl mb-4">⚠️</div>
-                        <h1 class="text-2xl font-bold text-gray-800 mb-3">Erro fatal no ColabNotes</h1>
+                        <h1 class="text-2xl font-bold text-gray-800 mb-3">Erro fatal no Sistema de Notas</h1>
                         <p class="text-gray-600 mb-6">Não foi possível inicializar a aplicação.</p>
                         <button onclick="window.location.reload()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold transition-all">
                             🔄 Recarregar Página
