@@ -18,10 +18,7 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- EmailJS -->
-    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
-
-    <!-- Firebase SDKs -->
+    <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
@@ -29,11 +26,6 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        .fade-in { animation: fadeIn 0.3s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
         .spinner {
             width: 40px;
@@ -48,65 +40,26 @@
             100% { transform: rotate(360deg); }
         }
         
-        .spinner-small {
-            width: 20px;
-            height: 20px;
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid #3b82f6;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         
-        /* Indicador de usuários online */
-        .online-indicator {
-            width: 8px;
-            height: 8px;
+        .online-dot {
+            width: 10px;
+            height: 10px;
             background-color: #10b981;
             border-radius: 50%;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            display: inline-block;
+            margin-right: 5px;
         }
         
-        /* Badges de colaboração */
-        .collaboration-badge {
-            position: absolute;
-            top: -5px;
-            right: -5px;
-            width: 18px;
-            height: 18px;
-            background-color: #3b82f6;
-            color: white;
-            border-radius: 50%;
-            font-size: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
+        .note-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
         }
         
-        /* Indicador de edição em tempo real */
-        .editing-indicator {
-            position: absolute;
-            bottom: 5px;
-            left: 5px;
-            background: rgba(59, 130, 246, 0.9);
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 10px;
-            z-index: 10;
-        }
-        
-        /* Efeito de novo conteúdo */
-        .new-content {
-            animation: highlight 2s ease-out;
-        }
-        @keyframes highlight {
-            0% { background-color: rgba(59, 130, 246, 0.2); }
-            100% { background-color: transparent; }
+        .modal-overlay {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
         }
     </style>
 </head>
@@ -114,7 +67,11 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- 1. CONFIGURAÇÃO FIREBASE ---
+        // ============================================
+        // CONFIGURAÇÃO E UTILITÁRIOS
+        // ============================================
+        
+        // Firebase config
         const firebaseConfig = {
             apiKey: "AIzaSyAS2tOdf-Xjq5lRHeKC_Fjx0tSoMyCKkas",
             authDomain: "notas-c6160.firebaseapp.com",
@@ -125,7 +82,7 @@
             measurementId: "G-B6H79DLBNR"
         };
 
-        // Inicializa Firebase
+        // Inicializar Firebase
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
@@ -133,420 +90,169 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // --- 2. UTILITÁRIOS ---
-        
-        const formatDate = (timestamp) => {
-            if (!timestamp) return '';
-            const date = new Date(timestamp);
-            return new Intl.DateTimeFormat('pt-BR', { 
-                day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' 
-            }).format(date);
-        };
-
-        const formatDateFull = (timestamp) => {
-            if (!timestamp) return '';
-            const date = new Date(timestamp);
-            return new Intl.DateTimeFormat('pt-BR', { 
-                day: '2-digit', 
-                month: '2-digit', 
-                year: 'numeric',
-                hour: '2-digit', 
-                minute: '2-digit',
-                second: '2-digit'
-            }).format(date);
-        };
-
-        const getGoogleCalendarUrl = (note) => {
-            if (!note.reminderDate) return '#';
-            
-            const startDate = new Date(note.reminderDate).toISOString().replace(/-|:|\.\d\d\d/g, "");
-            const endDate = new Date(new Date(note.reminderDate).getTime() + 60*60*1000).toISOString().replace(/-|:|\.\d\d\d/g, "");
-            
-            const title = encodeURIComponent(note.title);
-            const details = encodeURIComponent(note.content + "\n\n(Criado via ColabNotes)");
-            
-            return `https://www.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startDate}/${endDate}&details=${details}`;
-        };
-
-        const sendBrowserNotification = (title, body) => {
-            if (!("Notification" in window)) return;
-            
-            if (Notification.permission === "granted") {
-                new Notification(title, { body, icon: "https://cdn-icons-png.flaticon.com/512/2965/2965358.png" });
-            } else if (Notification.permission !== "denied") {
-                Notification.requestPermission().then(permission => {
-                    if (permission === "granted") {
-                        new Notification(title, { body });
-                    }
+        // Funções utilitárias
+        const utils = {
+            formatDate: (timestamp) => {
+                if (!timestamp) return '';
+                const date = new Date(timestamp);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+                
+                if (diffMins < 1) return 'agora';
+                if (diffMins < 60) return `${diffMins} min atrás`;
+                if (diffHours < 24) return `${diffHours}h atrás`;
+                if (diffDays < 7) return `${diffDays}d atrás`;
+                
+                return date.toLocaleDateString('pt-BR', { 
+                    day: '2-digit', 
+                    month: 'short'
                 });
+            },
+            
+            getUserColor: (userId) => {
+                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+                if (!userId) return colors[0];
+                const hash = userId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+                return colors[hash % colors.length];
+            },
+            
+            sendNotification: (title, body) => {
+                if (!("Notification" in window)) return;
+                if (Notification.permission === "granted") {
+                    new Notification(title, { body });
+                }
             }
         };
 
-        // Gerar cor aleatória para usuário
-        const generateUserColor = (userId) => {
-            const colors = [
-                '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-                '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
-            ];
-            const index = Math.abs(userId.split('').reduce((a, b) => a + b.charCodeAt(0), 0)) % colors.length;
-            return colors[index];
-        };
+        // ============================================
+        // COMPONENTES REUSÁVEIS
+        // ============================================
 
-        // --- 3. COMPONENTES ---
-
-        const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
+        // Componente Modal
+        function Modal({ isOpen, onClose, title, children, size = 'md' }) {
             if (!isOpen) return null;
             
-            const sizeClasses = {
+            const sizes = {
                 sm: 'max-w-md',
                 md: 'max-w-lg',
                 lg: 'max-w-2xl',
                 xl: 'max-w-4xl'
             };
             
-            return (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 fade-in">
-                    <div className={`bg-white rounded-xl shadow-2xl w-full ${sizeClasses[size]} overflow-hidden`}>
-                        <div className="flex justify-between items-center p-4 border-b">
-                            <h3 className="text-lg font-bold text-gray-800">{title}</h3>
-                            <button onClick={onClose} className="text-gray-500 hover:text-red-500 transition">
-                                <i className="fa-solid fa-times text-xl"></i>
-                            </button>
-                        </div>
-                        <div className="p-4 max-h-[80vh] overflow-y-auto">
-                            {children}
-                        </div>
-                    </div>
-                </div>
+            return React.createElement('div', {
+                className: 'fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 fade-in'
+            },
+                React.createElement('div', {
+                    className: `bg-white rounded-xl shadow-2xl w-full ${sizes[size]} overflow-hidden`
+                },
+                    React.createElement('div', { className: 'flex justify-between items-center p-4 border-b' },
+                        React.createElement('h3', { className: 'text-lg font-bold text-gray-800' }, title),
+                        React.createElement('button', {
+                            onClick: onClose,
+                            className: 'text-gray-500 hover:text-red-500 transition'
+                        },
+                            React.createElement('i', { className: 'fa-solid fa-times text-xl' })
+                        )
+                    ),
+                    React.createElement('div', { className: 'p-4 max-h-[80vh] overflow-y-auto' }, children)
+                )
             );
-        };
+        }
 
-        // Componente para mostrar usuários online
-        const OnlineUsers = ({ users, currentUserId }) => {
-            return (
-                <div className="flex items-center space-x-2">
-                    <span className="text-sm text-gray-600">Online:</span>
-                    <div className="flex -space-x-2">
-                        {users.slice(0, 5).map(user => (
-                            <div key={user.id} className="relative" title={user.name}>
-                                <div className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold text-white"
-                                     style={{ backgroundColor: generateUserColor(user.id) }}>
-                                    {user.name.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="online-indicator absolute -bottom-1 -right-1"></div>
-                            </div>
-                        ))}
-                        {users.length > 5 && (
-                            <div className="w-8 h-8 rounded-full bg-gray-300 border-2 border-white flex items-center justify-center text-xs font-bold text-gray-700">
-                                +{users.length - 5}
-                            </div>
-                        )}
-                    </div>
-                    <span className="text-xs text-gray-500">
-                        {users.filter(u => u.id === currentUserId).length > 0 ? 'Você' : ''} e {users.length - 1} outros
-                    </span>
-                </div>
-            );
-        };
+        // ============================================
+        // COMPONENTE PRINCIPAL
+        // ============================================
 
-        // Componente de Login/Registro
-        const AuthForm = ({ onSuccess }) => {
-            const [name, setName] = React.useState('');
-            const [email, setEmail] = React.useState('');
-            const [password, setPassword] = React.useState('');
-            const [isLogin, setIsLogin] = React.useState(true);
-            const [loading, setLoading] = React.useState(false);
-            const [error, setError] = React.useState('');
-            const [showAdvanced, setShowAdvanced] = React.useState(false);
-
-            const handleSubmit = async (e) => {
-                e.preventDefault();
-                setLoading(true);
-                setError('');
-
-                try {
-                    if (isLogin) {
-                        await auth.signInWithEmailAndPassword(email, password);
-                    } else {
-                        if (password.length < 6) {
-                            throw new Error('A senha deve ter pelo menos 6 caracteres');
-                        }
-                        
-                        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-                        
-                        if (name.trim()) {
-                            await userCredential.user.updateProfile({
-                                displayName: name
-                            });
-                            
-                            // Salva no Firestore
-                            await db.collection('users').doc(userCredential.user.uid).set({
-                                name: name.trim(),
-                                email: email,
-                                lastSeen: Date.now(),
-                                color: generateUserColor(userCredential.user.uid)
-                            }, { merge: true });
-                        }
-                    }
-                    
-                    onSuccess();
-                } catch (err) {
-                    if (err.code === 'auth/unauthorized-domain') {
-                        setError(
-                            <div>
-                                <p className="font-bold">Domínio não autorizado!</p>
-                                <p className="text-sm mt-1">
-                                    Use o modo Anônimo ou solicite ao administrador para autorizar este domínio.
-                                </p>
-                            </div>
-                        );
-                    } else {
-                        setError(err.message);
-                    }
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            const handleAnonymousLogin = async () => {
-                try {
-                    await auth.signInAnonymously();
-                    onSuccess();
-                } catch (err) {
-                    setError(err.message);
-                }
-            };
-
-            return (
-                <div className="space-y-6">
-                    <div className="text-center">
-                        <div className="bg-blue-600 text-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <i className="fa-solid fa-users text-2xl"></i>
-                        </div>
-                        <h2 className="text-2xl font-bold text-gray-800 mb-2">ColabNotes</h2>
-                        <p className="text-gray-600">Notas colaborativas em tempo real</p>
-                    </div>
-
-                    {error && (
-                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                            {error}
-                        </div>
-                    )}
-
-                    {!showAdvanced ? (
-                        <>
-                            <form onSubmit={handleSubmit} className="space-y-4">
-                                {!isLogin && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Como quer ser chamado?</label>
-                                        <input
-                                            type="text"
-                                            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                            value={name}
-                                            onChange={(e) => setName(e.target.value)}
-                                            placeholder="Seu nome ou apelido"
-                                        />
-                                    </div>
-                                )}
-                                
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                                    <input
-                                        type="email"
-                                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="seu@email.com"
-                                        required={!isLogin}
-                                    />
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-                                    <input
-                                        type="password"
-                                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        placeholder={isLogin ? "Sua senha" : "Mínimo 6 caracteres"}
-                                        required={!isLogin}
-                                    />
-                                </div>
-
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                                >
-                                    {loading ? (
-                                        <>
-                                            <div className="spinner-small"></div>
-                                            {isLogin ? 'Entrando...' : 'Criando conta...'}
-                                        </>
-                                    ) : (
-                                        isLogin ? 'Entrar' : 'Criar Conta'
-                                    )}
-                                </button>
-                            </form>
-
-                            <div className="relative">
-                                <div className="absolute inset-0 flex items-center">
-                                    <div className="w-full border-t border-gray-300"></div>
-                                </div>
-                                <div className="relative flex justify-center text-sm">
-                                    <span className="px-2 bg-white text-gray-500">Ou entre rápido</span>
-                                </div>
-                            </div>
-
-                            <div className="space-y-3">
-                                <button
-                                    onClick={handleAnonymousLogin}
-                                    className="w-full flex items-center justify-center gap-2 bg-gray-800 text-white px-4 py-3 rounded-lg hover:bg-gray-900 transition"
-                                >
-                                    <i className="fa-solid fa-user-secret"></i>
-                                    Entrar como Visitante
-                                </button>
-
-                                <div className="text-center text-sm text-gray-500">
-                                    Como visitante, você pode ver e colaborar em todas as notas!
-                                </div>
-                            </div>
-
-                            <div className="text-center pt-4 border-t">
-                                <button
-                                    onClick={() => setIsLogin(!isLogin)}
-                                    className="text-blue-600 hover:text-blue-800"
-                                >
-                                    {isLogin ? 'Não tem conta? Registre-se' : 'Já tem conta? Faça login'}
-                                </button>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="text-center">
-                            <button
-                                onClick={handleAnonymousLogin}
-                                className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 mb-4"
-                            >
-                                Entrar como Visitante (Recomendado)
-                            </button>
-                            <button
-                                onClick={() => setShowAdvanced(false)}
-                                className="text-gray-600 hover:text-gray-800"
-                            >
-                                Voltar
-                            </button>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
-        // Componente Principal
-        const App = () => {
+        function App() {
+            // Estados principais
             const [user, setUser] = React.useState(null);
             const [username, setUsername] = React.useState('');
-            const [userEmail, setUserEmail] = React.useState('');
             const [notes, setNotes] = React.useState([]);
             const [comments, setComments] = React.useState([]);
             const [onlineUsers, setOnlineUsers] = React.useState([]);
             const [loading, setLoading] = React.useState(true);
-            const [recentActivity, setRecentActivity] = React.useState([]);
             
-            // Estados de UI
+            // Estados da UI
             const [showAuthModal, setShowAuthModal] = React.useState(true);
             const [isNoteModalOpen, setIsNoteModalOpen] = React.useState(false);
-            const [isSettingsModalOpen, setIsSettingsModalOpen] = React.useState(false);
-            const [isUsersModalOpen, setIsUsersModalOpen] = React.useState(false);
+            const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
             const [activeNote, setActiveNote] = React.useState(null);
-            const [newNoteHighlight, setNewNoteHighlight] = React.useState(null);
             
-            // Formulário de Nota
+            // Formulários
             const [formTitle, setFormTitle] = React.useState('');
             const [formContent, setFormContent] = React.useState('');
             const [formDate, setFormDate] = React.useState('');
-            
-            // Comentários
             const [newComment, setNewComment] = React.useState('');
-
+            
             // Configurações
-            const [emailConfig, setEmailConfig] = React.useState({
-                serviceId: localStorage.getItem('email_service_id') || '',
-                templateId: localStorage.getItem('email_template_id') || '',
-                publicKey: localStorage.getItem('email_public_key') || ''
-            });
+            const [userColor, setUserColor] = React.useState('#3b82f6');
 
-            // --- AUTENTICAÇÃO E PRESENÇA ---
+            // ============================================
+            // EFEITOS E LIFECYCLE
+            // ============================================
+
+            // Efeito 1: Autenticação
             React.useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (u) => {
                     if (u) {
                         setUser(u);
                         
-                        let displayName = u.displayName;
-                        let email = u.email;
-                        
+                        // Define nome do usuário
+                        let name = u.displayName;
                         if (u.isAnonymous) {
                             const savedName = localStorage.getItem(`username_${u.uid}`);
                             if (savedName) {
-                                displayName = savedName;
+                                name = savedName;
                             } else {
+                                // Pede nome se for anônimo
                                 setTimeout(() => {
                                     const userName = prompt("Como gostaria de ser chamado?", "Visitante");
-                                    const name = userName && userName.trim() ? userName.trim() : 'Visitante';
-                                    setUsername(name);
-                                    localStorage.setItem(`username_${u.uid}`, name);
+                                    const finalName = userName && userName.trim() ? userName.trim() : 'Visitante';
+                                    setUsername(finalName);
+                                    localStorage.setItem(`username_${u.uid}`, finalName);
                                     
-                                    // Atualiza no Firestore
+                                    // Salva no Firestore
                                     db.collection('users').doc(u.uid).set({
-                                        name: name,
+                                        name: finalName,
                                         isAnonymous: true,
-                                        lastSeen: Date.now(),
-                                        color: generateUserColor(u.uid)
+                                        lastSeen: Date.now()
                                     }, { merge: true });
-                                }, 500);
-                                displayName = 'Visitante';
+                                }, 1000);
+                                name = 'Visitante';
                             }
-                            email = null;
                         } else {
-                            displayName = u.displayName || u.email?.split('@')[0] || 'Usuário';
-                            email = u.email;
+                            name = u.displayName || u.email?.split('@')[0] || 'Usuário';
                             
-                            // Salva/atualiza usuário no Firestore
+                            // Salva usuário registrado
                             await db.collection('users').doc(u.uid).set({
-                                name: displayName,
-                                email: email,
-                                lastSeen: Date.now(),
-                                color: generateUserColor(u.uid)
+                                name: name,
+                                email: u.email,
+                                lastSeen: Date.now()
                             }, { merge: true });
                         }
                         
-                        setUsername(displayName);
-                        setUserEmail(email);
+                        setUsername(name);
+                        setUserColor(utils.getUserColor(u.uid));
                         setShowAuthModal(false);
                         setLoading(false);
                     } else {
-                        setShowAuthModal(true);
-                    }
-                });
-
-                // Entrada automática como anônimo
-                setTimeout(() => {
-                    if (!user) {
+                        // Se não tem usuário, cria anônimo
                         auth.signInAnonymously().catch(console.error);
                     }
-                }, 1000);
+                });
 
                 return () => unsubscribe();
             }, []);
 
-            // --- ATUALIZA PRESENÇA DO USUÁRIO ---
+            // Efeito 2: Atualizar presença
             React.useEffect(() => {
                 if (!user) return;
-
-                const userRef = db.collection('users').doc(user.uid);
                 
-                // Atualiza lastSeen a cada 30 segundos
                 const updatePresence = () => {
-                    userRef.set({
+                    db.collection('users').doc(user.uid).set({
                         lastSeen: Date.now(),
                         online: true
                     }, { merge: true });
@@ -555,153 +261,80 @@
                 updatePresence();
                 const interval = setInterval(updatePresence, 30000);
                 
-                // Ao sair, marca como offline
-                const handleBeforeUnload = () => {
-                    userRef.set({
-                        online: false,
-                        lastSeen: Date.now()
-                    }, { merge: true });
-                };
-                
-                window.addEventListener('beforeunload', handleBeforeUnload);
-                
                 return () => {
                     clearInterval(interval);
-                    window.removeEventListener('beforeunload', handleBeforeUnload);
-                    userRef.set({
+                    db.collection('users').doc(user.uid).set({
                         online: false,
                         lastSeen: Date.now()
                     }, { merge: true });
                 };
             }, [user]);
 
-            // --- MONITORA USUÁRIOS ONLINE ---
+            // Efeito 3: Monitorar usuários online
             React.useEffect(() => {
                 if (!user) return;
 
-                const unsubUsers = db.collection('users')
-                    .where('lastSeen', '>', Date.now() - 120000) // Últimos 2 minutos
+                const unsub = db.collection('users')
+                    .where('lastSeen', '>', Date.now() - 120000)
                     .onSnapshot((snapshot) => {
                         const users = [];
                         snapshot.forEach(doc => {
-                            if (doc.id !== user.uid) { // Exclui o próprio usuário
-                                users.push({
-                                    id: doc.id,
-                                    ...doc.data()
-                                });
+                            if (doc.id !== user.uid) {
+                                users.push({ id: doc.id, ...doc.data() });
                             }
                         });
                         setOnlineUsers(users);
                     });
 
-                return () => unsubUsers();
+                return () => unsub();
             }, [user]);
 
-            // --- CARREGAMENTO DE DADOS EM TEMPO REAL ---
+            // Efeito 4: Carregar notas
             React.useEffect(() => {
                 if (!user) return;
 
-                // Carregar Notas - TODAS AS NOTAS SÃO PÚBLICAS
                 const unsubNotes = db.collection('notes')
                     .orderBy('updatedAt', 'desc')
                     .onSnapshot((snapshot) => {
                         const loadedNotes = [];
                         snapshot.forEach(doc => {
-                            loadedNotes.push({ 
-                                id: doc.id, 
-                                ...doc.data(),
-                                isNew: !notes.find(n => n.id === doc.id)
-                            });
+                            loadedNotes.push({ id: doc.id, ...doc.data() });
                         });
-                        
                         setNotes(loadedNotes);
-                        
-                        // Notificação para novas notas
-                        const newNotes = loadedNotes.filter(n => n.isNew && n.authorId !== user.uid);
-                        if (newNotes.length > 0) {
-                            const latestNew = newNotes[0];
-                            sendBrowserNotification(
-                                "Nova Nota Colaborativa!", 
-                                `${latestNew.author} criou "${latestNew.title}"`
-                            );
-                            
-                            // Destaca nova nota
-                            setNewNoteHighlight(latestNew.id);
-                            setTimeout(() => setNewNoteHighlight(null), 2000);
-                        }
+                        setLoading(false);
                     }, (error) => {
                         console.error("Erro notas:", error);
                         setLoading(false);
                     });
 
-                // Carregar Comentários - TODOS OS COMENTÁRIOS SÃO PÚBLICOS
+                return () => unsubNotes();
+            }, [user]);
+
+            // Efeito 5: Carregar comentários
+            React.useEffect(() => {
+                if (!user) return;
+
                 const unsubComments = db.collection('comments')
-                    .orderBy('createdAt', 'desc')
-                    .limit(50)
+                    .orderBy('createdAt', 'asc')
                     .onSnapshot((snapshot) => {
                         const loadedComments = [];
                         snapshot.forEach(doc => {
                             loadedComments.push({ id: doc.id, ...doc.data() });
                         });
-                        
-                        // Notificação para novos comentários
-                        const newComments = loadedComments.filter(
-                            c => !comments.find(old => old.id === c.id) && c.authorId !== user.uid
-                        );
-                        
-                        if (newComments.length > 0) {
-                            newComments.forEach(comment => {
-                                sendBrowserNotification(
-                                    "Novo Comentário!", 
-                                    `${comment.author} comentou em uma nota`
-                                );
-                            });
-                        }
-
                         setComments(loadedComments);
-                    }, (error) => console.error("Erro comentários:", error));
-
-                // Carregar Atividade Recente
-                const unsubActivity = db.collection('activity')
-                    .orderBy('timestamp', 'desc')
-                    .limit(20)
-                    .onSnapshot((snapshot) => {
-                        const activities = [];
-                        snapshot.forEach(doc => {
-                            activities.push({ id: doc.id, ...doc.data() });
-                        });
-                        setRecentActivity(activities);
                     });
 
-                return () => {
-                    unsubNotes();
-                    unsubComments();
-                    unsubActivity();
-                };
+                return () => unsubComments();
             }, [user]);
 
-            // --- REGISTRAR ATIVIDADE ---
-            const logActivity = async (type, noteId = null, details = {}) => {
-                if (!user) return;
-                
-                try {
-                    await db.collection('activity').add({
-                        type,
-                        userId: user.uid,
-                        userName: username,
-                        noteId,
-                        noteTitle: details.noteTitle,
-                        timestamp: Date.now(),
-                        ...details
-                    });
-                } catch (error) {
-                    console.error("Erro ao registrar atividade:", error);
-                }
-            };
+            // ============================================
+            // HANDLERS (Funções de ação)
+            // ============================================
 
-            // --- HANDLERS ---
-
-            const handleAuthSuccess = () => {
+            const handleAuth = (e) => {
+                e.preventDefault();
+                if (!username.trim()) return;
+                localStorage.setItem(`username_${user.uid}`, username);
                 setShowAuthModal(false);
             };
 
@@ -714,24 +347,11 @@
                 }
             };
 
-            const requestNotificationPermission = () => {
-                if (!("Notification" in window)) {
-                    alert("Este navegador não suporta notificações de desktop.");
+            const handleSaveNote = async () => {
+                if (!formTitle.trim() || !user) {
+                    alert("Título é obrigatório!");
                     return;
                 }
-                Notification.requestPermission().then(permission => {
-                    if (permission === "granted") {
-                        new Notification("Notificações Ativadas!", { 
-                            body: "Você será notificado sobre novas notas e comentários.",
-                            icon: "https://cdn-icons-png.flaticon.com/512/2965/2965358.png"
-                        });
-                    }
-                });
-            };
-
-            const handleSaveNote = async () => {
-                if (!formTitle.trim()) return alert("O título é obrigatório");
-                if (!user) return alert("Usuário não autenticado");
 
                 const noteData = {
                     title: formTitle,
@@ -740,45 +360,31 @@
                     author: username,
                     authorId: user.uid,
                     updatedAt: Date.now(),
-                    lastEditor: username,
-                    lastEditorId: user.uid
+                    lastEditor: username
                 };
 
                 try {
                     if (activeNote) {
-                        // Editar nota existente
+                        // Editar
                         await db.collection('notes').doc(activeNote.id).update(noteData);
-                        logActivity('edit_note', activeNote.id, { 
-                            noteTitle: formTitle,
-                            oldTitle: activeNote.title 
-                        });
                     } else {
-                        // Criar nova nota
+                        // Criar nova
                         noteData.createdAt = Date.now();
                         noteData.viewCount = 0;
                         noteData.commentCount = 0;
-                        noteData.collaborators = [user.uid];
-                        
-                        const docRef = await db.collection('notes').add(noteData);
-                        
-                        logActivity('create_note', docRef.id, { 
-                            noteTitle: formTitle 
-                        });
+                        await db.collection('notes').add(noteData);
                     }
                     closeNoteModal();
                 } catch (err) {
                     console.error(err);
-                    alert("Erro ao salvar nota.");
+                    alert("Erro ao salvar. Tente novamente.");
                 }
             };
 
             const handleDeleteNote = async (id) => {
-                if(!confirm("Tem certeza que deseja excluir esta nota?\nTodos os colaboradores perderão acesso.")) return;
+                if (!confirm("Excluir esta nota permanentemente?")) return;
                 try {
                     await db.collection('notes').doc(id).delete();
-                    logActivity('delete_note', id, { 
-                        noteTitle: notes.find(n => n.id === id)?.title 
-                    });
                     if (activeNote && activeNote.id === id) closeNoteModal();
                 } catch (err) {
                     console.error(err);
@@ -793,31 +399,24 @@
                     content: newComment,
                     author: username,
                     authorId: user.uid,
-                    createdAt: Date.now(),
-                    noteTitle: activeNote.title
+                    createdAt: Date.now()
                 };
 
                 try {
                     await db.collection('comments').add(commentData);
+                    setNewComment('');
                     
-                    // Atualiza contador de comentários na nota
+                    // Atualiza contador na nota
                     await db.collection('notes').doc(activeNote.id).update({
-                        commentCount: firebase.firestore.FieldValue.increment(1),
                         updatedAt: Date.now()
                     });
-                    
-                    logActivity('add_comment', activeNote.id, { 
-                        noteTitle: activeNote.title,
-                        comment: newComment.substring(0, 50) + (newComment.length > 50 ? '...' : '')
-                    });
-                    
-                    setNewComment('');
                 } catch (err) {
                     console.error(err);
                 }
             };
 
-            const handleLikeNote = async (noteId) => {
+            const handleLikeNote = async (noteId, e) => {
+                e.stopPropagation();
                 if (!user) return;
                 
                 try {
@@ -845,6 +444,10 @@
                 }
             };
 
+            // ============================================
+            // FUNÇÕES DE UI
+            // ============================================
+
             const openNewNote = () => {
                 setFormTitle('');
                 setFormContent('');
@@ -860,7 +463,7 @@
                 setActiveNote(note);
                 setIsNoteModalOpen(true);
                 
-                // Registra visualização
+                // Incrementa visualização
                 if (note.authorId !== user.uid) {
                     db.collection('notes').doc(note.id).update({
                         viewCount: firebase.firestore.FieldValue.increment(1)
@@ -873,695 +476,630 @@
                 setActiveNote(null);
             };
 
-            // Calcula estatísticas
-            const userNotesCount = notes.filter(n => n.authorId === user?.uid).length;
-            const totalComments = comments.length;
-            const totalLikes = notes.reduce((sum, note) => sum + (note.likeCount || 0), 0);
-            
-            const activeComments = activeNote 
-                ? comments.filter(c => c.noteId === activeNote.id) 
-                : [];
+            // ============================================
+            // RENDERIZAÇÃO
+            // ============================================
 
-            // --- RENDERIZAÇÃO ---
-
+            // Loading state
             if (loading) {
-                return (
-                    <div className="flex h-screen items-center justify-center">
-                        <div className="text-center">
-                            <div className="spinner mx-auto mb-4"></div>
-                            <p className="text-gray-600">Carregando espaço colaborativo...</p>
-                        </div>
-                    </div>
+                return React.createElement('div', {
+                    className: 'flex h-screen items-center justify-center'
+                },
+                    React.createElement('div', { className: 'text-center' },
+                        React.createElement('div', { className: 'spinner mx-auto mb-4' }),
+                        React.createElement('p', { className: 'text-gray-600' }, 'Carregando...')
+                    )
                 );
             }
 
-            return (
-                <div className="min-h-screen pb-10 relative">
-                    {/* Header com Usuários Online */}
-                    <header className="bg-white shadow-sm sticky top-0 z-20">
-                        <div className="max-w-7xl mx-auto px-4 py-3">
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-blue-600 text-white p-2 rounded-lg">
-                                        <i className="fa-solid fa-users text-xl"></i>
-                                    </div>
-                                    <div>
-                                        <h1 className="text-xl font-bold text-gray-800">ColabNotes</h1>
-                                        <p className="text-xs text-gray-500">Notas colaborativas em tempo real</p>
-                                    </div>
-                                </div>
-                                
-                                <div className="flex items-center gap-4">
-                                    <button
-                                        onClick={() => setIsUsersModalOpen(true)}
-                                        className="hidden md:flex items-center gap-2 text-sm text-gray-600 hover:text-blue-600 transition"
-                                    >
-                                        <OnlineUsers users={[...onlineUsers, { id: user.uid, name: username }]} currentUserId={user.uid} />
-                                    </button>
-                                    
-                                    <div className="hidden md:flex items-center gap-2 text-sm text-gray-600">
-                                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                            <i className="fa-solid fa-note-sticky mr-1"></i>
-                                            {notes.length} notas
-                                        </span>
-                                        <span className="bg-green-100 text-green-800 px-2 py-1 rounded">
-                                            <i className="fa-solid fa-comment mr-1"></i>
-                                            {totalComments} comentários
-                                        </span>
-                                    </div>
-                                    
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-                                             style={{ backgroundColor: generateUserColor(user.uid) }}
-                                             title={username}>
-                                            {username.charAt(0).toUpperCase()}
-                                        </div>
-                                        <div className="text-sm">
-                                            <div className="font-medium">{username}</div>
-                                            <div className="text-xs text-gray-500">
-                                                {userEmail || 'Visitante'}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <button 
-                                        onClick={handleLogout}
-                                        className="text-gray-500 hover:text-red-600 transition p-2"
-                                        title="Sair"
-                                    >
-                                        <i className="fa-solid fa-right-from-bracket"></i>
-                                    </button>
-                                    
-                                    <button 
-                                        onClick={openNewNote}
-                                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition shadow-lg flex items-center gap-2"
-                                    >
-                                        <i className="fa-solid fa-plus"></i>
-                                        <span className="hidden sm:inline">Nova Nota</span>
-                                    </button>
-                                </div>
-                            </div>
+            // Calcula estatísticas
+            const userNotesCount = notes.filter(n => n.authorId === user?.uid).length;
+            const totalComments = comments.length;
+            const activeComments = activeNote ? comments.filter(c => c.noteId === activeNote.id) : [];
+
+            // ============================================
+            // ESTRUTURA PRINCIPAL DO APP
+            // ============================================
+
+            return React.createElement('div', { className: 'min-h-screen bg-gray-50' },
+                // Header
+                React.createElement('header', {
+                    className: 'bg-white shadow-sm sticky top-0 z-20 border-b'
+                },
+                    React.createElement('div', {
+                        className: 'max-w-7xl mx-auto px-4 py-3'
+                    },
+                        React.createElement('div', {
+                            className: 'flex justify-between items-center'
+                        },
+                            // Logo
+                            React.createElement('div', {
+                                className: 'flex items-center gap-3'
+                            },
+                                React.createElement('div', {
+                                    className: 'bg-blue-600 text-white p-2 rounded-lg'
+                                },
+                                    React.createElement('i', { className: 'fa-solid fa-users text-xl' })
+                                ),
+                                React.createElement('div', null,
+                                    React.createElement('h1', {
+                                        className: 'text-xl font-bold text-gray-800'
+                                    }, 'ColabNotes'),
+                                    React.createElement('p', {
+                                        className: 'text-xs text-gray-500'
+                                    }, 'Notas colaborativas em tempo real')
+                                )
+                            ),
                             
-                            {/* Barra inferior do header */}
-                            <div className="flex justify-between items-center mt-2 text-xs text-gray-500">
-                                <div className="flex items-center gap-4">
-                                    <span>
-                                        <i className="fa-solid fa-user mr-1"></i>
-                                        {username} • {userNotesCount} notas suas
-                                    </span>
-                                    <span>
-                                        <i className="fa-solid fa-users mr-1"></i>
-                                        {onlineUsers.length + 1} usuários online
-                                    </span>
-                                </div>
+                            // Direita: Usuário e ações
+                            React.createElement('div', {
+                                className: 'flex items-center gap-4'
+                            },
+                                // Status online
+                                React.createElement('div', {
+                                    className: 'hidden md:flex items-center gap-2 text-sm text-gray-600'
+                                },
+                                    React.createElement('span', {
+                                        className: 'online-dot'
+                                    }),
+                                    React.createElement('span', null, `${onlineUsers.length + 1} online`)
+                                ),
                                 
-                                <button 
-                                    onClick={() => setIsSettingsModalOpen(true)}
-                                    className="text-gray-500 hover:text-blue-600 transition"
-                                    title="Configurações"
-                                >
-                                    <i className="fa-solid fa-gear"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </header>
-
-                    {/* Conteúdo Principal */}
-                    <main className="max-w-7xl mx-auto px-4 py-6">
-                        {notes.length === 0 ? (
-                            <div className="text-center py-20 text-gray-400">
-                                <i className="fa-solid fa-users-between-lines text-6xl mb-4"></i>
-                                <h2 className="text-2xl font-bold text-gray-700 mb-2">Bem-vindo ao espaço colaborativo!</h2>
-                                <p className="text-gray-600 mb-6">Ainda não há notas. Crie a primeira e convide outros para colaborar!</p>
-                                <button 
-                                    onClick={openNewNote}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition shadow-lg text-lg"
-                                >
-                                    <i className="fa-solid fa-plus mr-2"></i>
-                                    Criar Primeira Nota Colaborativa
-                                </button>
-                                <p className="text-sm text-gray-500 mt-4">
-                                    Todas as notas são públicas e podem ser vistas e editadas por todos os usuários online.
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="space-y-6">
-                                {/* Cards de Estatísticas */}
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                    <div className="bg-white p-4 rounded-xl shadow-sm border">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm text-gray-500">Total de Notas</p>
-                                                <p className="text-2xl font-bold text-gray-800">{notes.length}</p>
-                                            </div>
-                                            <div className="bg-blue-100 p-3 rounded-lg">
-                                                <i className="fa-solid fa-note-sticky text-blue-600 text-xl"></i>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="bg-white p-4 rounded-xl shadow-sm border">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm text-gray-500">Comentários</p>
-                                                <p className="text-2xl font-bold text-gray-800">{totalComments}</p>
-                                            </div>
-                                            <div className="bg-green-100 p-3 rounded-lg">
-                                                <i className="fa-solid fa-comments text-green-600 text-xl"></i>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="bg-white p-4 rounded-xl shadow-sm border">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm text-gray-500">Usuários Online</p>
-                                                <p className="text-2xl font-bold text-gray-800">{onlineUsers.length + 1}</p>
-                                            </div>
-                                            <div className="bg-purple-100 p-3 rounded-lg">
-                                                <i className="fa-solid fa-users text-purple-600 text-xl"></i>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="bg-white p-4 rounded-xl shadow-sm border">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm text-gray-500">Suas Notas</p>
-                                                <p className="text-2xl font-bold text-gray-800">{userNotesCount}</p>
-                                            </div>
-                                            <div className="bg-yellow-100 p-3 rounded-lg">
-                                                <i className="fa-solid fa-user text-yellow-600 text-xl"></i>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Atividade Recente */}
-                                {recentActivity.length > 0 && (
-                                    <div className="bg-white rounded-xl shadow-sm border p-4">
-                                        <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-                                            <i className="fa-solid fa-bolt"></i>
-                                            Atividade Recente
-                                        </h3>
-                                        <div className="space-y-2 max-h-40 overflow-y-auto">
-                                            {recentActivity.slice(0, 5).map(activity => (
-                                                <div key={activity.id} className="text-sm text-gray-600 flex items-center gap-2 py-2 border-b last:border-0">
-                                                    <div className="w-6 h-6 rounded-full text-white text-xs flex items-center justify-center flex-shrink-0"
-                                                         style={{ backgroundColor: generateUserColor(activity.userId) }}>
-                                                        {activity.userName?.charAt(0).toUpperCase() || 'U'}
-                                                    </div>
-                                                    <div>
-                                                        {activity.type === 'create_note' && (
-                                                            <span><strong>{activity.userName}</strong> criou a nota "{activity.noteTitle}"</span>
-                                                        )}
-                                                        {activity.type === 'edit_note' && (
-                                                            <span><strong>{activity.userName}</strong> editou "{activity.noteTitle}"</span>
-                                                        )}
-                                                        {activity.type === 'add_comment' && (
-                                                            <span><strong>{activity.userName}</strong> comentou em "{activity.noteTitle}"</span>
-                                                        )}
-                                                        {activity.type === 'delete_note' && (
-                                                            <span><strong>{activity.userName}</strong> excluiu uma nota</span>
-                                                        )}
-                                                        <div className="text-xs text-gray-400">{formatDate(activity.timestamp)}</div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Grid de Notas */}
-                                <div>
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h2 className="text-lg font-bold text-gray-800">
-                                            <i className="fa-solid fa-layer-group mr-2"></i>
-                                            Todas as Notas ({notes.length})
-                                        </h2>
-                                        <div className="text-sm text-gray-500">
-                                            Clique em qualquer nota para ver e colaborar
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {notes.map(note => (
-                                            <div 
-                                                key={note.id} 
-                                                onClick={() => openEditNote(note)}
-                                                className={`bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border border-gray-100 overflow-hidden group flex flex-col h-72 relative ${
-                                                    newNoteHighlight === note.id ? 'new-content' : ''
-                                                }`}
-                                            >
-                                                {note.authorId === user.uid && (
-                                                    <div className="absolute top-3 right-3 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                                                        <i className="fa-solid fa-crown mr-1"></i>
-                                                        Sua
-                                                    </div>
-                                                )}
-                                                
-                                                <div className="p-5 flex-1 overflow-hidden">
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <h3 className="font-bold text-lg text-gray-800 line-clamp-1">{note.title}</h3>
-                                                        {note.reminderDate && (
-                                                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                                                <i className="fa-regular fa-clock"></i>
-                                                                {new Date(note.reminderDate).toLocaleDateString('pt-BR')}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <p className="text-gray-600 text-sm whitespace-pre-wrap line-clamp-6">{note.content}</p>
-                                                </div>
-                                                
-                                                <div className="bg-gray-50 px-5 py-3 border-t">
-                                                    <div className="flex justify-between items-center text-xs text-gray-500">
-                                                        <div className="flex items-center gap-3">
-                                                            <span className="flex items-center gap-1">
-                                                                <i className="fa-regular fa-eye"></i>
-                                                                {note.viewCount || 0}
-                                                            </span>
-                                                            <span className="flex items-center gap-1">
-                                                                <i className="fa-regular fa-comment"></i>
-                                                                {comments.filter(c => c.noteId === note.id).length}
-                                                            </span>
-                                                            <button 
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleLikeNote(note.id);
-                                                                }}
-                                                                className="flex items-center gap-1 hover:text-red-500 transition"
-                                                            >
-                                                                <i className={`fa-regular fa-heart ${note.likedByUser ? 'text-red-500' : ''}`}></i>
-                                                                {note.likeCount || 0}
-                                                            </button>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <div className="font-medium">{note.author}</div>
-                                                            <div className="text-[10px]">Atualizada: {formatDate(note.updatedAt)}</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </main>
-
-                    {/* Modal de Autenticação */}
-                    <Modal 
-                        isOpen={showAuthModal}
-                        title=""
-                        onClose={() => {}}
-                        size="md"
-                    >
-                        <AuthForm onSuccess={handleAuthSuccess} />
-                    </Modal>
-
-                    {/* Modal: Configurações */}
-                    <Modal 
-                        isOpen={isSettingsModalOpen} 
-                        title="Configurações"
-                        onClose={() => setIsSettingsModalOpen(false)}
-                        size="lg"
-                    >
-                        <div className="space-y-6">
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                                <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2">
-                                    <i className="fa-solid fa-user-circle"></i>
-                                    Sua Conta
-                                </h4>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Nome:</span>
-                                        <span className="font-medium">{username}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Status:</span>
-                                        <span className="font-medium px-2 py-1 rounded text-xs bg-green-100 text-green-800">
-                                            <i className="fa-solid fa-circle mr-1" style={{ fontSize: '6px' }}></i>
-                                            Online
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Suas notas:</span>
-                                        <span className="font-medium">{userNotesCount}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="p-3 border rounded-lg bg-gray-50">
-                                <div className="flex justify-between items-center mb-2">
-                                    <div>
-                                        <span className="font-bold text-gray-700 block">Notificações de Desktop</span>
-                                        <span className="text-xs text-gray-500">Receba alertas de novas notas e comentários</span>
-                                    </div>
-                                    <button 
-                                        onClick={requestNotificationPermission}
-                                        className="text-blue-600 font-bold text-sm hover:bg-blue-50 px-3 py-1 rounded transition border border-blue-200"
-                                    >
-                                        Ativar / Testar
-                                    </button>
-                                </div>
-                                <p className="text-xs text-gray-500 mt-2">
-                                    Status: {Notification.permission === "granted" ? "✅ Ativado" : "⚠️ Não ativado"}
-                                </p>
-                            </div>
-
-                            <div>
-                                <h4 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-                                    <i className="fa-solid fa-envelope"></i>
-                                    Configurações de Email (EmailJS)
-                                </h4>
-                                <p className="text-sm text-gray-500 bg-blue-50 p-3 rounded mb-4">
-                                    <i className="fa-solid fa-circle-info mr-1"></i>
-                                    Configure para receber lembretes por email.
-                                </p>
+                                // Info do usuário
+                                React.createElement('div', {
+                                    className: 'flex items-center gap-2'
+                                },
+                                    React.createElement('div', {
+                                        className: 'w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold',
+                                        style: { backgroundColor: userColor }
+                                    },
+                                        username.charAt(0).toUpperCase()
+                                    ),
+                                    React.createElement('div', { className: 'text-sm' },
+                                        React.createElement('div', {
+                                            className: 'font-medium'
+                                        }, username),
+                                        React.createElement('div', {
+                                            className: 'text-xs text-gray-500'
+                                        }, user?.isAnonymous ? 'Visitante' : 'Usuário')
+                                    )
+                                ),
                                 
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Service ID</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full p-2 border rounded mt-1" 
-                                            value={emailConfig.serviceId} 
-                                            onChange={e => setEmailConfig({...emailConfig, serviceId: e.target.value})} 
-                                            placeholder="ex: service_xyz" 
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Template ID</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full p-2 border rounded mt-1" 
-                                            value={emailConfig.templateId} 
-                                            onChange={e => setEmailConfig({...emailConfig, templateId: e.target.value})} 
-                                            placeholder="ex: template_abc" 
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Public Key</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full p-2 border rounded mt-1" 
-                                            value={emailConfig.publicKey} 
-                                            onChange={e => setEmailConfig({...emailConfig, publicKey: e.target.value})} 
-                                            placeholder="ex: user_12345" 
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-lg">
-                                <h4 className="font-bold mb-2 flex items-center gap-2">
-                                    <i className="fa-solid fa-info-circle"></i>
-                                    Informações Importantes
-                                </h4>
-                                <ul className="text-sm space-y-1">
-                                    <li>• Todas as notas são públicas e colaborativas</li>
-                                    <li>• Qualquer usuário pode editar qualquer nota</li>
-                                    <li>• Use os comentários para discussões</li>
-                                    <li>• Seu nome aparece em suas edições</li>
-                                </ul>
-                            </div>
-
-                            <button 
-                                onClick={handleSaveSettings} 
-                                className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 flex items-center justify-center gap-2"
-                            >
-                                <i className="fa-solid fa-save"></i>
-                                Salvar Configurações
-                            </button>
-                        </div>
-                    </Modal>
-
-                    {/* Modal: Usuários Online */}
-                    <Modal 
-                        isOpen={isUsersModalOpen} 
-                        title="Usuários Online"
-                        onClose={() => setIsUsersModalOpen(false)}
-                        size="md"
-                    >
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="text-sm text-gray-600">
-                                    <span className="font-bold text-green-600">{onlineUsers.length + 1}</span> usuários ativos agora
-                                </div>
-                                <div className="online-indicator"></div>
-                            </div>
+                                // Botão de sair
+                                React.createElement('button', {
+                                    onClick: handleLogout,
+                                    className: 'text-gray-500 hover:text-red-600 p-2',
+                                    title: 'Sair'
+                                },
+                                    React.createElement('i', { className: 'fa-solid fa-right-from-bracket' })
+                                ),
+                                
+                                // Botão nova nota
+                                React.createElement('button', {
+                                    onClick: openNewNote,
+                                    className: 'bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2'
+                                },
+                                    React.createElement('i', { className: 'fa-solid fa-plus' }),
+                                    React.createElement('span', { className: 'hidden sm:inline' }, 'Nova Nota')
+                                )
+                            )
+                        ),
+                        
+                        // Barra inferior do header
+                        React.createElement('div', {
+                            className: 'flex justify-between items-center mt-2 text-xs text-gray-500'
+                        },
+                            React.createElement('div', {
+                                className: 'flex items-center gap-4'
+                            },
+                                React.createElement('span', null,
+                                    React.createElement('i', { className: 'fa-solid fa-user mr-1' }),
+                                    `${username} • ${userNotesCount} notas suas`
+                                ),
+                                React.createElement('span', null,
+                                    React.createElement('i', { className: 'fa-solid fa-note-sticky mr-1' }),
+                                    `${notes.length} notas totais`
+                                )
+                            ),
+                            React.createElement('button', {
+                                onClick: () => setIsSettingsOpen(true),
+                                className: 'text-gray-500 hover:text-blue-600',
+                                title: 'Configurações'
+                            },
+                                React.createElement('i', { className: 'fa-solid fa-gear' })
+                            )
+                        )
+                    )
+                ),
+                
+                // Conteúdo principal
+                React.createElement('main', {
+                    className: 'max-w-7xl mx-auto px-4 py-6'
+                },
+                    notes.length === 0 ? (
+                        // Estado vazio
+                        React.createElement('div', {
+                            className: 'text-center py-20'
+                        },
+                            React.createElement('i', {
+                                className: 'fa-solid fa-users-between-lines text-6xl text-gray-300 mb-4'
+                            }),
+                            React.createElement('h2', {
+                                className: 'text-2xl font-bold text-gray-700 mb-2'
+                            }, 'Bem-vindo ao espaço colaborativo!'),
+                            React.createElement('p', {
+                                className: 'text-gray-600 mb-6'
+                            }, 'Ainda não há notas. Crie a primeira e outros usuários poderão ver e colaborar.'),
+                            React.createElement('button', {
+                                onClick: openNewNote,
+                                className: 'bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition text-lg'
+                            },
+                                React.createElement('i', { className: 'fa-solid fa-plus mr-2' }),
+                                'Criar Primeira Nota'
+                            ),
+                            React.createElement('p', {
+                                className: 'text-sm text-gray-500 mt-4'
+                            }, 'Todas as notas são públicas e podem ser vistas/editadas por qualquer usuário')
+                        )
+                    ) : (
+                        // Grid de notas
+                        React.createElement('div', { className: 'space-y-6' },
+                            // Estatísticas
+                            React.createElement('div', {
+                                className: 'grid grid-cols-1 md:grid-cols-4 gap-4'
+                            },
+                                ['Notas', 'Comentários', 'Online', 'Suas Notas'].map((title, idx) => 
+                                    React.createElement('div', {
+                                        key: idx,
+                                        className: 'bg-white p-4 rounded-xl shadow-sm border'
+                                    },
+                                        React.createElement('div', {
+                                            className: 'flex justify-between items-center'
+                                        },
+                                            React.createElement('div', null,
+                                                React.createElement('p', {
+                                                    className: 'text-sm text-gray-500'
+                                                }, title),
+                                                React.createElement('p', {
+                                                    className: 'text-2xl font-bold text-gray-800'
+                                                }, 
+                                                    idx === 0 ? notes.length :
+                                                    idx === 1 ? totalComments :
+                                                    idx === 2 ? onlineUsers.length + 1 :
+                                                    userNotesCount
+                                                )
+                                            ),
+                                            React.createElement('div', {
+                                                className: `p-3 rounded-lg ${
+                                                    idx === 0 ? 'bg-blue-100' :
+                                                    idx === 1 ? 'bg-green-100' :
+                                                    idx === 2 ? 'bg-purple-100' :
+                                                    'bg-yellow-100'
+                                                }`
+                                            },
+                                                React.createElement('i', {
+                                                    className: `${
+                                                        idx === 0 ? 'fa-solid fa-note-sticky text-blue-600' :
+                                                        idx === 1 ? 'fa-solid fa-comments text-green-600' :
+                                                        idx === 2 ? 'fa-solid fa-users text-purple-600' :
+                                                        'fa-solid fa-user text-yellow-600'
+                                                    } text-xl`
+                                                })
+                                            )
+                                        )
+                                    )
+                                )
+                            ),
                             
-                            <div className="space-y-3">
-                                {/* Você */}
-                                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
-                                             style={{ backgroundColor: generateUserColor(user.uid) }}>
-                                            {username.charAt(0).toUpperCase()}
-                                        </div>
-                                        <div>
-                                            <div className="font-medium">{username} <span className="text-blue-600">(Você)</span></div>
-                                            <div className="text-xs text-gray-500">
-                                                {userEmail || 'Visitante'}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
-                                        Online
-                                    </span>
-                                </div>
+                            // Grid de notas
+                            React.createElement('div', null,
+                                React.createElement('div', {
+                                    className: 'flex justify-between items-center mb-4'
+                                },
+                                    React.createElement('h2', {
+                                        className: 'text-lg font-bold text-gray-800'
+                                    },
+                                        React.createElement('i', { className: 'fa-solid fa-layer-group mr-2' }),
+                                        `Todas as Notas (${notes.length})`
+                                    ),
+                                    React.createElement('div', {
+                                        className: 'text-sm text-gray-500'
+                                    }, 'Clique para ver e colaborar')
+                                ),
                                 
-                                {/* Outros usuários */}
-                                {onlineUsers.map(onlineUser => (
-                                    <div key={onlineUser.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
-                                                 style={{ backgroundColor: generateUserColor(onlineUser.id) }}>
-                                                {onlineUser.name?.charAt(0).toUpperCase() || 'U'}
-                                            </div>
-                                            <div>
-                                                <div className="font-medium">{onlineUser.name}</div>
-                                                <div className="text-xs text-gray-500">
-                                                    {onlineUser.email || 'Visitante'}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full flex items-center gap-1">
-                                            <div className="online-indicator"></div>
-                                            Online
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                            
-                            <div className="text-center text-sm text-gray-500 pt-4 border-t">
-                                Todos os usuários podem ver e editar todas as notas
-                            </div>
-                        </div>
-                    </Modal>
-
-                    {/* Modal: Editar/Criar Nota */}
-                    {isNoteModalOpen && (
-                        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-0 sm:p-4 fade-in backdrop-blur-sm">
-                            <div className="bg-white h-full w-full sm:h-auto sm:max-h-[90vh] sm:rounded-xl sm:max-w-4xl shadow-2xl flex flex-col sm:flex-row overflow-hidden">
-                                
-                                {/* Lado Esquerdo: Editor */}
-                                <div className="flex-1 flex flex-col border-r border-gray-200">
-                                    <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-                                        <div>
-                                            <h2 className="font-bold text-lg text-gray-700">
-                                                {activeNote ? 'Editar Nota' : 'Nova Nota'}
-                                            </h2>
-                                            <div className="text-xs text-gray-500 flex items-center gap-2 mt-1">
-                                                <i className="fa-solid fa-users"></i>
-                                                <span>Esta nota é pública e colaborativa</span>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            {activeNote && (
-                                                <>
-                                                    <div className="text-xs text-gray-500 flex items-center gap-1 mr-2">
-                                                        <i className="fa-regular fa-eye"></i>
-                                                        {activeNote.viewCount || 0} visualizações
-                                                    </div>
-                                                    <button 
-                                                        onClick={() => handleDeleteNote(activeNote.id)}
-                                                        className="p-2 text-red-500 hover:bg-red-50 rounded"
-                                                        title="Excluir"
-                                                    >
-                                                        <i className="fa-solid fa-trash"></i>
-                                                    </button>
-                                                </>
-                                            )}
-                                            <button onClick={closeNoteModal} className="p-2 text-gray-500 hover:bg-gray-200 rounded">
-                                                <i className="fa-solid fa-times text-xl"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="p-6 flex-1 overflow-y-auto">
-                                        <div className="flex items-center gap-2 mb-4 text-sm text-gray-600">
-                                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                                                 style={{ backgroundColor: generateUserColor(user.uid) }}>
-                                                {username.charAt(0).toUpperCase()}
-                                            </div>
-                                            <span>Editando como <strong>{username}</strong></span>
-                                        </div>
-                                        
-                                        <input 
-                                            type="text" 
-                                            placeholder="Título da Nota (visível para todos)" 
-                                            className="w-full text-2xl font-bold mb-4 outline-none placeholder-gray-300"
-                                            value={formTitle}
-                                            onChange={(e) => setFormTitle(e.target.value)}
-                                        />
-                                        
-                                        <div className="flex flex-wrap gap-4 mb-4 text-sm text-gray-600">
-                                            <div className="flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-lg">
-                                                <i className="fa-regular fa-clock"></i>
-                                                <input 
-                                                    type="datetime-local" 
-                                                    className="bg-transparent outline-none"
-                                                    value={formDate}
-                                                    onChange={(e) => setFormDate(e.target.value)}
-                                                />
-                                            </div>
+                                React.createElement('div', {
+                                    className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+                                },
+                                    notes.map(note => 
+                                        React.createElement('div', {
+                                            key: note.id,
+                                            onClick: () => openEditNote(note),
+                                            className: 'bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer border border-gray-100 overflow-hidden group flex flex-col h-72 note-card'
+                                        },
+                                            note.authorId === user?.uid && React.createElement('div', {
+                                                className: 'absolute top-3 right-3 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full'
+                                            },
+                                                React.createElement('i', { className: 'fa-solid fa-crown mr-1' }),
+                                                'Sua'
+                                            ),
                                             
-                                            {activeNote && formDate && (
-                                                <a 
-                                                    href={getGoogleCalendarUrl({title: formTitle, content: formContent, reminderDate: formDate})} 
-                                                    target="_blank"
-                                                    className="flex items-center gap-2 text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-1.5 rounded-lg transition"
-                                                >
-                                                    <i className="fa-brands fa-google"></i>
-                                                    Adicionar ao Agenda
-                                                </a>
-                                            )}
-                                        </div>
-
-                                        <textarea 
-                                            placeholder="Escreva seu conteúdo aqui... Todos os usuários podem ver e editar." 
-                                            className="w-full h-64 resize-none outline-none text-gray-700 leading-relaxed"
-                                            value={formContent}
-                                            onChange={(e) => setFormContent(e.target.value)}
-                                        ></textarea>
-                                        
-                                        <div className="mt-4 text-xs text-gray-500">
-                                            <i className="fa-solid fa-info-circle mr-1"></i>
-                                            Esta nota será visível para todos os {onlineUsers.length + 1} usuários online
-                                        </div>
-                                    </div>
-
-                                    <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
-                                        <div className="text-sm text-gray-600">
-                                            {activeNote ? (
-                                                <span>Última edição por <strong>{activeNote.lastEditor || activeNote.author}</strong> • {formatDateFull(activeNote.updatedAt)}</span>
-                                            ) : (
-                                                <span>Criando nova nota colaborativa</span>
-                                            )}
-                                        </div>
-                                        <button 
-                                            onClick={handleSaveNote}
-                                            className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 shadow transition flex items-center gap-2"
-                                        >
-                                            <i className="fa-solid fa-save"></i>
-                                            {activeNote ? 'Salvar Alterações' : 'Publicar Nota'}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Lado Direito: Comentários e Colaboradores */}
-                                {activeNote && (
-                                    <div className="w-full sm:w-96 bg-gray-50 flex flex-col h-1/3 sm:h-auto border-t sm:border-t-0">
-                                        <div className="p-4 border-b bg-white">
-                                            <div className="flex justify-between items-center">
-                                                <h3 className="font-bold text-gray-700 flex items-center gap-2">
-                                                    <i className="fa-regular fa-comments"></i> Discussão
-                                                </h3>
-                                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                                                    {activeComments.length} comentários
-                                                </span>
-                                            </div>
-                                            <div className="text-xs text-gray-500 mt-1">
-                                                Discuta esta nota com outros colaboradores
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                                            {activeComments.length === 0 ? (
-                                                <div className="text-center text-gray-400 py-8">
-                                                    <i className="fa-regular fa-comment-dots text-3xl mb-2"></i>
-                                                    <p>Seja o primeiro a comentar!</p>
-                                                    <p className="text-xs mt-1">Use os comentários para discutir esta nota com outros</p>
-                                                </div>
-                                            ) : (
-                                                activeComments.map(comment => (
-                                                    <div key={comment.id} className={`bg-white p-3 rounded-lg shadow-sm border ${comment.authorId === user.uid ? 'border-blue-100' : 'border-gray-100'}`}>
-                                                        <div className="flex items-center gap-2 mb-2">
-                                                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                                                                 style={{ backgroundColor: generateUserColor(comment.authorId) }}>
-                                                                {comment.author?.charAt(0).toUpperCase() || 'U'}
-                                                            </div>
-                                                            <div className="flex-1">
-                                                                <div className="flex justify-between items-baseline">
-                                                                    <span className="font-semibold text-xs text-gray-700">{comment.author}</span>
-                                                                    <span className="text-[10px] text-gray-400">{formatDate(comment.createdAt)}</span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <p className="text-gray-700 text-sm">{comment.content}</p>
-                                                    </div>
-                                                ))
-                                            )}
-                                        </div>
-
-                                        <div className="p-3 bg-white border-t">
-                                            <div className="flex gap-2">
-                                                <input 
-                                                    type="text" 
-                                                    placeholder="Adicione um comentário..." 
-                                                    className="flex-1 border rounded-full px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                                                    value={newComment}
-                                                    onChange={(e) => setNewComment(e.target.value)}
-                                                    onKeyPress={(e) => e.key === 'Enter' && handleSendComment()}
-                                                />
-                                                <button 
-                                                    onClick={handleSendComment}
-                                                    className="bg-blue-600 text-white w-9 h-9 rounded-full flex items-center justify-center hover:bg-blue-700 transition"
-                                                    disabled={!newComment.trim()}
-                                                >
-                                                    <i className="fa-solid fa-paper-plane text-xs"></i>
-                                                </button>
-                                            </div>
-                                            <div className="text-xs text-gray-500 mt-2 text-center">
-                                                Seu comentário será visível para todos os colaboradores
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Footer */}
-                    <footer className="mt-12 pt-6 border-t border-gray-200">
-                        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
-                            <p>
-                                <strong>ColabNotes</strong> - Plataforma de notas colaborativas em tempo real • 
-                                {notes.length} notas • {onlineUsers.length + 1} usuários online • 
-                                Desenvolvido com Firebase e React
-                            </p>
-                            <p className="mt-2">
-                                Todas as notas são públicas e colaborativas. Qualquer usuário pode ver e editar qualquer nota.
-                            </p>
-                        </div>
-                    </footer>
-                </div>
+                                            React.createElement('div', {
+                                                className: 'p-5 flex-1 overflow-hidden'
+                                            },
+                                                React.createElement('div', {
+                                                    className: 'flex justify-between items-start mb-2'
+                                                },
+                                                    React.createElement('h3', {
+                                                        className: 'font-bold text-lg text-gray-800 line-clamp-1'
+                                                    }, note.title),
+                                                    note.reminderDate && React.createElement('span', {
+                                                        className: 'text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full'
+                                                    },
+                                                        React.createElement('i', { className: 'fa-regular fa-clock mr-1' }),
+                                                        new Date(note.reminderDate).toLocaleDateString('pt-BR')
+                                                    )
+                                                ),
+                                                React.createElement('p', {
+                                                    className: 'text-gray-600 text-sm whitespace-pre-wrap line-clamp-5'
+                                                }, note.content || 'Sem conteúdo...')
+                                            ),
+                                            
+                                            React.createElement('div', {
+                                                className: 'bg-gray-50 px-5 py-3 border-t'
+                                            },
+                                                React.createElement('div', {
+                                                    className: 'flex justify-between items-center text-xs text-gray-500'
+                                                },
+                                                    React.createElement('div', {
+                                                        className: 'flex items-center gap-3'
+                                                    },
+                                                        React.createElement('span', {
+                                                            className: 'flex items-center gap-1'
+                                                        },
+                                                            React.createElement('i', { className: 'fa-regular fa-eye' }),
+                                                            note.viewCount || 0
+                                                        ),
+                                                        React.createElement('span', {
+                                                            className: 'flex items-center gap-1'
+                                                        },
+                                                            React.createElement('i', { className: 'fa-regular fa-comment' }),
+                                                            comments.filter(c => c.noteId === note.id).length
+                                                        ),
+                                                        React.createElement('button', {
+                                                            onClick: (e) => handleLikeNote(note.id, e),
+                                                            className: 'flex items-center gap-1 hover:text-red-500'
+                                                        },
+                                                            React.createElement('i', { 
+                                                                className: `fa-regular fa-heart ${note.liked ? 'text-red-500' : ''}`
+                                                            }),
+                                                            note.likeCount || 0
+                                                        )
+                                                    ),
+                                                    React.createElement('div', {
+                                                        className: 'text-right'
+                                                    },
+                                                        React.createElement('div', {
+                                                            className: 'font-medium'
+                                                        }, note.author),
+                                                        React.createElement('div', {
+                                                            className: 'text-[10px]'
+                                                        }, `Atualizada: ${utils.formatDate(note.updatedAt)}`)
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                ),
+                
+                // Modal de Autenticação
+                React.createElement(Modal, {
+                    isOpen: showAuthModal,
+                    title: "Bem-vindo ao ColabNotes",
+                    onClose: () => {}
+                },
+                    React.createElement('div', { className: 'space-y-6' },
+                        React.createElement('div', { className: 'text-center' },
+                            React.createElement('div', {
+                                className: 'bg-blue-600 text-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4'
+                            },
+                                React.createElement('i', { className: 'fa-solid fa-users text-2xl' })
+                            ),
+                            React.createElement('h2', {
+                                className: 'text-2xl font-bold text-gray-800 mb-2'
+                            }, 'ColabNotes'),
+                            React.createElement('p', { className: 'text-gray-600' }, 'Notas colaborativas em tempo real')
+                        ),
+                        
+                        React.createElement('form', {
+                            onSubmit: handleAuth,
+                            className: 'space-y-4'
+                        },
+                            React.createElement('div', null,
+                                React.createElement('label', {
+                                    className: 'block text-sm font-medium text-gray-700 mb-1'
+                                }, 'Como quer ser chamado?'),
+                                React.createElement('input', {
+                                    type: 'text',
+                                    className: 'w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none',
+                                    placeholder: 'Seu nome ou apelido',
+                                    value: username,
+                                    onChange: (e) => setUsername(e.target.value),
+                                    required: true
+                                })
+                            ),
+                            
+                            React.createElement('button', {
+                                type: 'submit',
+                                className: 'w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700'
+                            }, 'Entrar no ColabNotes')
+                        ),
+                        
+                        React.createElement('div', { className: 'text-center text-sm text-gray-500' },
+                            'Como visitante, você pode ver e colaborar em todas as notas públicas!'
+                        )
+                    )
+                ),
+                
+                // Modal de Configurações
+                React.createElement(Modal, {
+                    isOpen: isSettingsOpen,
+                    title: "Configurações",
+                    onClose: () => setIsSettingsOpen(false)
+                },
+                    React.createElement('div', { className: 'space-y-6' },
+                        React.createElement('div', { className: 'bg-gray-50 p-4 rounded-lg' },
+                            React.createElement('h4', {
+                                className: 'font-bold text-gray-700 mb-2'
+                            },
+                                React.createElement('i', { className: 'fa-solid fa-user-circle mr-2' }),
+                                'Sua Conta'
+                            ),
+                            React.createElement('div', { className: 'space-y-2' },
+                                React.createElement('div', { className: 'flex justify-between' },
+                                    React.createElement('span', { className: 'text-gray-600' }, 'Nome:'),
+                                    React.createElement('span', { className: 'font-medium' }, username)
+                                ),
+                                React.createElement('div', { className: 'flex justify-between' },
+                                    React.createElement('span', { className: 'text-gray-600' }, 'Status:'),
+                                    React.createElement('span', {
+                                        className: 'font-medium px-2 py-1 rounded text-xs bg-green-100 text-green-800'
+                                    },
+                                        React.createElement('i', { 
+                                            className: 'fa-solid fa-circle mr-1',
+                                            style: { fontSize: '6px' }
+                                        }),
+                                        'Online'
+                                    )
+                                )
+                            )
+                        ),
+                        
+                        React.createElement('div', { className: 'text-center' },
+                            React.createElement('button', {
+                                onClick: () => {
+                                    if (confirm("Deseja sair do ColabNotes?")) {
+                                        handleLogout();
+                                    }
+                                },
+                                className: 'bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-medium'
+                            },
+                                React.createElement('i', { className: 'fa-solid fa-right-from-bracket mr-2' }),
+                                'Sair do App'
+                            )
+                        )
+                    )
+                ),
+                
+                // Modal da Nota (Editor)
+                isNoteModalOpen && React.createElement('div', {
+                    className: 'fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 fade-in'
+                },
+                    React.createElement('div', {
+                        className: 'bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col'
+                    },
+                        // Cabeçalho do modal
+                        React.createElement('div', {
+                            className: 'p-4 border-b flex justify-between items-center'
+                        },
+                            React.createElement('div', null,
+                                React.createElement('h2', {
+                                    className: 'font-bold text-lg text-gray-700'
+                                }, activeNote ? 'Editar Nota' : 'Nova Nota'),
+                                React.createElement('div', {
+                                    className: 'text-xs text-gray-500 flex items-center gap-2 mt-1'
+                                },
+                                    React.createElement('i', { className: 'fa-solid fa-users' }),
+                                    'Esta nota é pública e colaborativa'
+                                )
+                            ),
+                            React.createElement('div', { className: 'flex gap-2' },
+                                activeNote && React.createElement('button', {
+                                    onClick: () => handleDeleteNote(activeNote.id),
+                                    className: 'p-2 text-red-500 hover:bg-red-50 rounded',
+                                    title: 'Excluir'
+                                },
+                                    React.createElement('i', { className: 'fa-solid fa-trash' })
+                                ),
+                                React.createElement('button', {
+                                    onClick: closeNoteModal,
+                                    className: 'p-2 text-gray-500 hover:bg-gray-200 rounded'
+                                },
+                                    React.createElement('i', { className: 'fa-solid fa-times text-xl' })
+                                )
+                            )
+                        ),
+                        
+                        // Corpo do modal
+                        React.createElement('div', {
+                            className: 'flex-1 overflow-hidden flex flex-col md:flex-row'
+                        },
+                            // Editor (esquerda)
+                            React.createElement('div', {
+                                className: 'flex-1 p-6 border-r overflow-y-auto'
+                            },
+                                React.createElement('div', {
+                                    className: 'flex items-center gap-2 mb-4 text-sm text-gray-600'
+                                },
+                                    React.createElement('div', {
+                                        className: 'w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold',
+                                        style: { backgroundColor: userColor }
+                                    },
+                                        username.charAt(0).toUpperCase()
+                                    ),
+                                    React.createElement('span', null,
+                                        'Editando como ',
+                                        React.createElement('strong', null, username)
+                                    )
+                                ),
+                                
+                                React.createElement('input', {
+                                    type: 'text',
+                                    placeholder: 'Título da Nota (visível para todos)',
+                                    className: 'w-full text-2xl font-bold mb-4 outline-none placeholder-gray-300',
+                                    value: formTitle,
+                                    onChange: (e) => setFormTitle(e.target.value)
+                                }),
+                                
+                                React.createElement('textarea', {
+                                    placeholder: 'Escreva seu conteúdo aqui... Todos os usuários podem ver e editar.',
+                                    className: 'w-full h-64 resize-none outline-none text-gray-700',
+                                    value: formContent,
+                                    onChange: (e) => setFormContent(e.target.value)
+                                }),
+                                
+                                React.createElement('div', {
+                                    className: 'mt-4 text-xs text-gray-500'
+                                },
+                                    React.createElement('i', { className: 'fa-solid fa-info-circle mr-1' }),
+                                    `Esta nota será visível para todos os ${onlineUsers.length + 1} usuários online`
+                                )
+                            ),
+                            
+                            // Comentários (direita)
+                            React.createElement('div', {
+                                className: 'w-full md:w-96 flex flex-col border-t md:border-t-0'
+                            },
+                                React.createElement('div', {
+                                    className: 'p-4 border-b'
+                                },
+                                    React.createElement('h3', {
+                                        className: 'font-bold text-gray-700'
+                                    },
+                                        React.createElement('i', { className: 'fa-regular fa-comments mr-2' }),
+                                        'Discussão ',
+                                        React.createElement('span', {
+                                            className: 'bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full ml-2'
+                                        }, activeComments.length)
+                                    )
+                                ),
+                                
+                                React.createElement('div', {
+                                    className: 'flex-1 overflow-y-auto p-4 space-y-3'
+                                },
+                                    activeComments.length === 0 ? (
+                                        React.createElement('div', {
+                                            className: 'text-center text-gray-400 py-8'
+                                        },
+                                            React.createElement('i', {
+                                                className: 'fa-regular fa-comment-dots text-3xl mb-2'
+                                            }),
+                                            React.createElement('p', null, 'Seja o primeiro a comentar!'),
+                                            React.createElement('p', {
+                                                className: 'text-xs mt-1'
+                                            }, 'Use os comentários para discutir esta nota com outros')
+                                        )
+                                    ) : (
+                                        activeComments.map(comment => 
+                                            React.createElement('div', {
+                                                key: comment.id,
+                                                className: 'bg-white p-3 rounded-lg shadow-sm border border-gray-100'
+                                            },
+                                                React.createElement('div', {
+                                                    className: 'flex justify-between items-baseline mb-1'
+                                                },
+                                                    React.createElement('span', {
+                                                        className: 'font-semibold text-xs text-gray-700'
+                                                    }, comment.author),
+                                                    React.createElement('span', {
+                                                        className: 'text-[10px] text-gray-400'
+                                                    }, utils.formatDate(comment.createdAt))
+                                                ),
+                                                React.createElement('p', {
+                                                    className: 'text-gray-700 text-sm'
+                                                }, comment.content)
+                                            )
+                                        )
+                                    )
+                                ),
+                                
+                                React.createElement('div', {
+                                    className: 'p-3 border-t'
+                                },
+                                    React.createElement('div', { className: 'flex gap-2' },
+                                        React.createElement('input', {
+                                            type: 'text',
+                                            placeholder: 'Adicione um comentário...',
+                                            className: 'flex-1 border rounded-full px-3 py-2 text-sm focus:outline-none focus:border-blue-500',
+                                            value: newComment,
+                                            onChange: (e) => setNewComment(e.target.value),
+                                            onKeyPress: (e) => e.key === 'Enter' && handleSendComment()
+                                        }),
+                                        React.createElement('button', {
+                                            onClick: handleSendComment,
+                                            className: 'bg-blue-600 text-white w-9 h-9 rounded-full flex items-center justify-center hover:bg-blue-700',
+                                            disabled: !newComment.trim()
+                                        },
+                                            React.createElement('i', { className: 'fa-solid fa-paper-plane text-xs' })
+                                        )
+                                    )
+                                )
+                            )
+                        ),
+                        
+                        // Rodapé do modal
+                        React.createElement('div', {
+                            className: 'p-4 border-t flex justify-end'
+                        },
+                            React.createElement('button', {
+                                onClick: handleSaveNote,
+                                className: 'bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 flex items-center gap-2'
+                            },
+                                React.createElement('i', { className: 'fa-solid fa-save' }),
+                                activeNote ? 'Salvar Alterações' : 'Publicar Nota'
+                            )
+                        )
+                    )
+                )
             );
-        };
+        }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        // ============================================
+        // INICIALIZAÇÃO DO APP
+        // ============================================
+        
+        try {
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(React.createElement(App));
+            console.log("ColabNotes iniciado com sucesso!");
+        } catch (error) {
+            console.error("Erro ao iniciar app:", error);
+            document.getElementById('root').innerHTML = `
+                <div class="flex h-screen items-center justify-center">
+                    <div class="text-center">
+                        <div class="text-red-500 text-6xl mb-4">⚠️</div>
+                        <h1 class="text-2xl font-bold text-gray-800 mb-2">Erro ao carregar</h1>
+                        <p class="text-gray-600 mb-4">Recarregue a página ou tente novamente.</p>
+                        <button onclick="window.location.reload()" class="bg-blue-600 text-white px-6 py-2 rounded-lg">
+                            Recarregar Página
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
     </script>
 </body>
 </html>
